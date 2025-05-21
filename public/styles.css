@@ -2,6 +2,10 @@
     box-sizing: border-box;
 }
 
+body {
+    background-color: burlywood;
+}
+
 button {
     border-style: solid;
     border-width: 2px;
@@ -12,6 +16,11 @@ button {
 
 button[aria-pressed="true"] {
     border-color: cornflowerblue;
+}
+
+.gameplayArea {
+    display: flex;
+    gap: 2rem;
 }
 
 .board {
@@ -55,4 +64,23 @@ button[aria-pressed="true"] {
     display: flex;
     gap: 1rem;
     font-weight: bold;
+}
+
+.selectedStack {
+    display: flex;
+    flex-direction: column;
+}
+
+.selectedStackPieces {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stackPiece {
+    font-family: sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0;
 }

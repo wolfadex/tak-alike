@@ -168,11 +168,11 @@ update msg model =
                                         [] ->
                                             ( model, Cmd.none )
 
-                                        pp :: _ ->
+                                        stack ->
                                             ( { model
                                                 | board =
                                                     model.board
-                                                        |> boardInsert index pp
+                                                        |> boardInsert index (stack ++ boardGet index model.board)
                                                         |> boardRemove idx
                                                 , pieceToMove = Nothing
                                                 , turn =
@@ -233,7 +233,7 @@ updateNoPieceSelected index model =
                     ( { model
                         | board =
                             boardInsert index
-                                ( piece, model.turn )
+                                [ ( piece, model.turn ) ]
                                 model.board
                         , turn =
                             case model.turn of
@@ -255,7 +255,7 @@ updateNoPieceSelected index model =
                     ( { model
                         | board =
                             boardInsert index
-                                ( piece, model.turn )
+                                [ ( piece, model.turn ) ]
                                 model.board
                         , turn =
                             case model.turn of
@@ -285,9 +285,9 @@ boardGet index board =
         |> Maybe.withDefault []
 
 
-boardInsert : Int -> ( Piece, Player ) -> Board -> Board
+boardInsert : Int -> List ( Piece, Player ) -> Board -> Board
 boardInsert index pp board =
-    Dict.insert index [ pp ] board
+    Dict.insert index pp board
 
 
 boardRemove : Int -> Board -> Board
@@ -512,14 +512,59 @@ view model =
                     ]
                 ]
             ]
-        , model.board
-            |> Dict.toList
-            |> List.map (viewBoardSpace model.winner model.pieceToMove)
-            |> Html.div
-                [ Css.board
-                , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
-                , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
-                ]
+        , Html.div
+            [ Css.gameplayArea ]
+            [ model.board
+                |> Dict.toList
+                |> List.map (viewBoardSpace model.winner model.pieceToMove)
+                |> Html.div
+                    [ Css.board
+                    , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
+                    , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
+                    ]
+            , case model.pieceToMove of
+                Nothing ->
+                    Html.text ""
+
+                Just index ->
+                    Html.div
+                        [ Css.selectedStack ]
+                        [ Html.h3 [] [ Html.text "Selected stack" ]
+                        , boardGet index model.board
+                            |> List.map
+                                (\( piece, player ) ->
+                                    Html.div
+                                        [ Html.Attributes.style "background-color" <|
+                                            case player of
+                                                White ->
+                                                    "rgb(245, 245, 245)"
+
+                                                Black ->
+                                                    "rgb(10, 10, 10)"
+                                        , Html.Attributes.style "color" <|
+                                            case player of
+                                                White ->
+                                                    "rgb(10, 10, 10)"
+
+                                                Black ->
+                                                    "rgb(245, 245, 245)"
+                                        , Css.stackPiece
+                                        ]
+                                        [ Html.text <|
+                                            case piece of
+                                                Stone ->
+                                                    "STONE"
+
+                                                Wall ->
+                                                    "WALL"
+
+                                                Capstone ->
+                                                    "CAPSTONE"
+                                        ]
+                                )
+                            |> Html.div [ Css.selectedStackPieces ]
+                        ]
+            ]
         ]
     }
 
@@ -679,18 +724,19 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
                             ( _, Black ) :: _ ->
                                 "rgb(245, 245, 245)"
                     ]
-                    [ case pieceStack of
-                        [] ->
-                            Html.text ""
+                    [ Html.text <|
+                        case pieceStack of
+                            [] ->
+                                ""
 
-                        ( Stone, _ ) :: _ ->
-                            Html.text "STONE"
+                            ( Stone, _ ) :: _ ->
+                                "STONE"
 
-                        ( Wall, _ ) :: _ ->
-                            Html.text "WALL"
+                            ( Wall, _ ) :: _ ->
+                                "WALL"
 
-                        ( Capstone, _ ) :: _ ->
-                            Html.text "CAPSTONE"
+                            ( Capstone, _ ) :: _ ->
+                                "CAPSTONE"
                     ]
                 ]
             ]
