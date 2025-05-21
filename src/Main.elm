@@ -28,6 +28,7 @@ type alias Model =
     , stoneCountBlack : Int
     , capstoneCountWhite : Int
     , capstoneCountBlack : Int
+    , winner : Maybe ( Player, List Int )
     }
 
 
@@ -38,7 +39,7 @@ type alias Board =
 type Piece
     = Stone
     | Wall
-    | CapStone
+    | Capstone
 
 
 type Player
@@ -48,9 +49,13 @@ type Player
 
 init : () -> ( Model, Cmd Msg )
 init _ =
+    ( initGame, Cmd.none )
+
+
+initGame =
     let
         size =
-            5
+            3
 
         stoneCount =
             if size == 3 then
@@ -90,22 +95,21 @@ init _ =
             else
                 0
     in
-    ( { board =
-            List.repeat (size * size) []
-                |> List.indexedMap Tuple.pair
-                |> Dict.fromList
-      , size = size
-      , turn = White
-      , selectedPieceWhite = Stone
-      , selectedPieceBlack = Stone
-      , pieceToMove = Nothing
-      , stoneCountWhite = stoneCount
-      , stoneCountBlack = stoneCount
-      , capstoneCountWhite = capstoneCount
-      , capstoneCountBlack = capstoneCount
-      }
-    , Cmd.none
-    )
+    { board =
+        List.repeat (size * size) []
+            |> List.indexedMap Tuple.pair
+            |> Dict.fromList
+    , size = size
+    , turn = White
+    , selectedPieceWhite = Stone
+    , selectedPieceBlack = Stone
+    , pieceToMove = Nothing
+    , stoneCountWhite = stoneCount
+    , stoneCountBlack = stoneCount
+    , capstoneCountWhite = capstoneCount
+    , capstoneCountBlack = capstoneCount
+    , winner = Nothing
+    }
 
 
 subscriptions : Model -> Sub Msg
@@ -114,13 +118,17 @@ subscriptions _ =
 
 
 type Msg
-    = SpaceSelected Int
+    = NewGame
+    | SpaceSelected Int
     | SetSelectedPiece Piece
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        NewGame ->
+            ( initGame, Cmd.none )
+
         SetSelectedPiece piece ->
             case model.turn of
                 White ->
@@ -130,36 +138,46 @@ update msg model =
                     ( { model | selectedPieceBlack = piece }, Cmd.none )
 
         SpaceSelected index ->
-            case model.pieceToMove of
+            case model.winner of
+                Just _ ->
+                    ( model, Cmd.none )
+
                 Nothing ->
-                    updateNoPieceSelected index model
+                    Tuple.mapFirst
+                        (\m ->
+                            { m | winner = checkWinCondition m.size m.board }
+                        )
+                    <|
+                        case model.pieceToMove of
+                            Just idx ->
+                                if List.member index (adjacentIndices model.size idx) then
+                                    case boardGet idx model.board of
+                                        [] ->
+                                            ( model, Cmd.none )
 
-                Just idx ->
-                    if List.member index (adjacentIndices model.size idx) then
-                        case boardGet idx model.board of
-                            [] ->
-                                ( model, Cmd.none )
+                                        pp :: _ ->
+                                            ( { model
+                                                | board =
+                                                    model.board
+                                                        |> boardInsert index pp
+                                                        |> boardRemove idx
+                                                , pieceToMove = Nothing
+                                                , turn =
+                                                    case model.turn of
+                                                        White ->
+                                                            Black
 
-                            pp :: _ ->
-                                ( { model
-                                    | board =
-                                        model.board
-                                            |> boardInsert index pp
-                                            |> boardRemove idx
-                                    , pieceToMove = Nothing
-                                    , turn =
-                                        case model.turn of
-                                            White ->
-                                                Black
+                                                        Black ->
+                                                            White
+                                              }
+                                            , Cmd.none
+                                            )
 
-                                            Black ->
-                                                White
-                                  }
-                                , Cmd.none
-                                )
+                                else
+                                    updateNoPieceSelected index model
 
-                    else
-                        updateNoPieceSelected index model
+                            Nothing ->
+                                updateNoPieceSelected index model
 
 
 updateNoPieceSelected : Int -> Model -> ( Model, Cmd Msg )
@@ -194,10 +212,10 @@ updateNoPieceSelected index model =
                             )
             in
             case ( piece, remStones, remCapstones ) of
-                ( CapStone, _, 0 ) ->
+                ( Capstone, _, 0 ) ->
                     ( model, Cmd.none )
 
-                ( CapStone, _, _ ) ->
+                ( Capstone, _, _ ) ->
                     ( { model
                         | board =
                             boardInsert index
@@ -263,11 +281,129 @@ boardRemove index board =
     Dict.insert index [] board
 
 
+checkWinCondition : Int -> Board -> Maybe ( Player, List Int )
+checkWinCondition size board =
+    let
+        xStart =
+            List.range 0 (size - 1)
+                |> List.concatMap
+                    (\x ->
+                        [ from2d size ( x, 0 )
+                        ]
+                    )
+
+        xEnd =
+            List.range 0 (size - 1)
+                |> List.concatMap
+                    (\x ->
+                        [ from2d size ( x, size - 1 )
+                        ]
+                    )
+    in
+    case checkWinConditionHelper size board (Debug.log "start" xStart) (Debug.log "end" xEnd) of
+        Just w ->
+            Just w
+
+        Nothing ->
+            let
+                yStart =
+                    List.range 0 (size - 1)
+                        |> List.concatMap
+                            (\y ->
+                                [ from2d size ( 0, y )
+                                ]
+                            )
+
+                yEnd =
+                    List.range 0 (size - 1)
+                        |> List.concatMap
+                            (\y ->
+                                [ from2d size ( 0, size - 1 )
+                                ]
+                            )
+            in
+            checkWinConditionHelper size board yStart yEnd
+
+
+checkWinConditionHelper : Int -> Board -> List Int -> List Int -> Maybe ( Player, List Int )
+checkWinConditionHelper size board start end =
+    case start of
+        [] ->
+            Nothing
+
+        next :: rest ->
+            case boardGet next board of
+                [] ->
+                    checkWinConditionHelper size board rest end
+
+                ( piece, player ) :: _ ->
+                    if piece == Stone || piece == Capstone then
+                        case floodFill size board (Debug.log "ff next" next) (Debug.log "ff player" player) |> Debug.log "ff result" of
+                            [] ->
+                                checkWinConditionHelper size board rest end
+
+                            indicies ->
+                                if List.any (\e -> List.member e indicies) end then
+                                    Just ( player, indicies )
+
+                                else
+                                    checkWinConditionHelper size board rest end
+
+                    else
+                        checkWinConditionHelper size board rest end
+
+
+floodFill : Int -> Board -> Int -> Player -> List Int
+floodFill size board start player =
+    floodFillHelper size board start player [ start ]
+
+
+floodFillHelper : Int -> Board -> Int -> Player -> List Int -> List Int
+floodFillHelper size board start player collected =
+    start
+        |> Debug.log "ff start"
+        |> adjacentIndices size
+        |> Debug.log "ff adjacent"
+        |> List.foldl
+            (\idx coll ->
+                if List.member idx coll then
+                    coll
+
+                else
+                    case boardGet idx board of
+                        [] ->
+                            coll
+
+                        ( Wall, _ ) :: _ ->
+                            coll
+
+                        ( _, plr ) :: _ ->
+                            if plr == player then
+                                floodFillHelper size board idx player (idx :: coll)
+
+                            else
+                                coll
+            )
+            collected
+
+
+
+-- VIEW
+
+
 view : Model -> Browser.Document Msg
 view model =
     { title = "Tak-Alike"
     , body =
         [ Html.h1 [] [ Html.text "Tak-Alike" ]
+        , case model.winner of
+            Nothing ->
+                Html.text ""
+
+            Just _ ->
+                Html.button
+                    [ Html.Events.onClick NewGame ]
+                    [ Html.text "New game" ]
         , Html.h3 []
             [ Html.text <|
                 case model.turn of
@@ -280,19 +416,38 @@ view model =
         , Html.p
             []
             [ Html.h4 [] [ Html.text "Piece to place" ]
-            , Html.div
+            , let
+                isSelected piece =
+                    (case model.turn of
+                        White ->
+                            model.selectedPieceWhite
+
+                        Black ->
+                            model.selectedPieceBlack
+                    )
+                        |> (==) piece
+                        |> boolToAttribute
+                        |> Html.Attributes.attribute "aria-pressed"
+              in
+              Html.div
                 [ Html.Attributes.style "display" "flex"
                 , Html.Attributes.style "gap" "0.5rem"
                 ]
                 [ Html.button
-                    [ Html.Events.onClick (SetSelectedPiece Stone) ]
+                    [ Html.Events.onClick (SetSelectedPiece Stone)
+                    , isSelected Stone
+                    ]
                     [ Html.text "Stone" ]
                 , Html.button
-                    [ Html.Events.onClick (SetSelectedPiece Wall) ]
+                    [ Html.Events.onClick (SetSelectedPiece Wall)
+                    , isSelected Wall
+                    ]
                     [ Html.text "Wall" ]
                 , Html.button
-                    [ Html.Events.onClick (SetSelectedPiece CapStone) ]
-                    [ Html.text "CapStone" ]
+                    [ Html.Events.onClick (SetSelectedPiece Capstone)
+                    , isSelected Capstone
+                    ]
+                    [ Html.text "Capstone" ]
                 ]
             , Html.div
                 [ Html.Attributes.style "display" "flex"
@@ -328,7 +483,7 @@ view model =
             ]
         , model.board
             |> Dict.toList
-            |> List.map (viewBoardSpace model.pieceToMove)
+            |> List.map (viewBoardSpace model.winner model.pieceToMove)
             |> Html.div
                 [ Html.Attributes.style "display" "grid"
                 , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
@@ -337,6 +492,15 @@ view model =
                 ]
         ]
     }
+
+
+boolToAttribute : Bool -> String
+boolToAttribute bool =
+    if bool then
+        "true"
+
+    else
+        "false"
 
 
 to2d : Int -> Int -> ( Int, Int )
@@ -366,29 +530,29 @@ adjacentIndices size index =
         |> List.map (from2d size)
 
 
-viewBoardSpace : Maybe Int -> ( Int, List ( Piece, Player ) ) -> Html Msg
-viewBoardSpace pieceToMove ( index, pieceStack ) =
-    let
-        ps p =
-            case p of
-                Black ->
-                    "BLK"
-
-                White ->
-                    "WHT"
-    in
+viewBoardSpace : Maybe ( Player, List Int ) -> Maybe Int -> ( Int, List ( Piece, Player ) ) -> Html Msg
+viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
     Html.button
         [ Html.Events.onClick (SpaceSelected index)
         , Html.Attributes.style "border-style" "solid"
-        , Html.Attributes.style "border-width" "3px"
+        , Html.Attributes.style "border-width" "10px"
         , Html.Attributes.style "border-color" <|
-            case pieceToMove of
+            case maybeWinner of
                 Nothing ->
-                    "gray"
+                    case pieceToMove of
+                        Nothing ->
+                            "gray"
 
-                Just idx ->
-                    if idx == index then
-                        "cornflowerblue"
+                        Just idx ->
+                            if idx == index then
+                                "cornflowerblue"
+
+                            else
+                                "gray"
+
+                Just ( _, indicies ) ->
+                    if List.member index indicies then
+                        "green"
 
                     else
                         "gray"
@@ -417,12 +581,12 @@ viewBoardSpace pieceToMove ( index, pieceStack ) =
             [] ->
                 Html.text " "
 
-            ( Stone, player ) :: _ ->
-                Html.text ("STN-" ++ ps player)
+            ( Stone, _ ) :: _ ->
+                Html.text "STN"
 
-            ( Wall, player ) :: _ ->
-                Html.text ("WLL-" ++ ps player)
+            ( Wall, _ ) :: _ ->
+                Html.text "WLL"
 
-            ( CapStone, player ) :: _ ->
-                Html.text ("CAP-" ++ ps player)
+            ( Capstone, _ ) :: _ ->
+                Html.text "CAP"
         ]
