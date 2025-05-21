@@ -29,6 +29,9 @@ type alias Model =
     , capstoneCountWhite : Int
     , capstoneCountBlack : Int
     , winner : Maybe ( Player, List Int )
+
+    --
+    , newGameSize : Int
     }
 
 
@@ -49,16 +52,12 @@ type Player
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( initGame, Cmd.none )
+    ( initGame 3, Cmd.none )
 
 
-initGame : Model
-initGame =
+initGame : Int -> Model
+initGame size =
     let
-        size : Int
-        size =
-            3
-
         stoneCount : Int
         stoneCount =
             if size == 3 then
@@ -113,6 +112,7 @@ initGame =
     , capstoneCountWhite = capstoneCount
     , capstoneCountBlack = capstoneCount
     , winner = Nothing
+    , newGameSize = size
     }
 
 
@@ -123,6 +123,7 @@ subscriptions _ =
 
 type Msg
     = NewGame
+    | SetGameSize Int
     | SpaceSelected Int
     | SetSelectedPiece Piece
 
@@ -131,7 +132,10 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NewGame ->
-            ( initGame, Cmd.none )
+            ( initGame model.newGameSize, Cmd.none )
+
+        SetGameSize size ->
+            ( { model | newGameSize = size }, Cmd.none )
 
         SetSelectedPiece piece ->
             case model.turn of
@@ -404,9 +408,24 @@ view model =
                 Html.text ""
 
             Just _ ->
-                Html.button
-                    [ Html.Events.onClick NewGame ]
-                    [ Html.text "New game" ]
+                Html.div []
+                    [ Html.button
+                        [ Html.Events.onClick NewGame ]
+                        [ Html.text "New game" ]
+                    , Html.label
+                        []
+                        (Html.span [] [ Html.text "Board size" ]
+                            :: List.map
+                                (\size ->
+                                    Html.button
+                                        [ Html.Events.onClick (SetGameSize size)
+                                        , buttonPressed (model.newGameSize == size)
+                                        ]
+                                        [ Html.text (String.fromInt size) ]
+                                )
+                                [ 3, 4, 5, 6, 8 ]
+                        )
+                    ]
         , Html.h3 []
             [ Html.text <|
                 case model.turn of
@@ -430,8 +449,7 @@ view model =
                             model.selectedPieceBlack
                     )
                         |> (==) piece
-                        |> boolToAttribute
-                        |> Html.Attributes.attribute "aria-pressed"
+                        |> buttonPressed
               in
               Html.div
                 [ Html.Attributes.style "display" "flex"
@@ -676,3 +694,10 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
                 ]
             ]
         ]
+
+
+buttonPressed : Bool -> Html.Attribute msg
+buttonPressed bool =
+    bool
+        |> boolToAttribute
+        |> Html.Attributes.attribute "aria-pressed"
