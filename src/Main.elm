@@ -28,7 +28,7 @@ type alias Model =
 
 
 type alias Board =
-    Dict Int (Maybe ( Piece, Player ))
+    Dict Int (List ( Piece, Player ))
 
 
 type Piece
@@ -49,7 +49,7 @@ init _ =
             5
     in
     ( { board =
-            List.repeat (size * size) Nothing
+            List.repeat (size * size) []
                 |> List.indexedMap Tuple.pair
                 |> Dict.fromList
       , size = size
@@ -63,7 +63,7 @@ init _ =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -91,7 +91,10 @@ update msg model =
                 Just idx ->
                     if List.member index (adjacentIndices model.size idx) then
                         case boardGet idx model.board of
-                            Just pp ->
+                            [] ->
+                                ( model, Cmd.none )
+
+                            pp :: _ ->
                                 ( { model
                                     | board =
                                         model.board
@@ -109,9 +112,6 @@ update msg model =
                                 , Cmd.none
                                 )
 
-                            Nothing ->
-                                ( model, Cmd.none )
-
                     else
                         updateNoPieceSelected index model
 
@@ -119,26 +119,17 @@ update msg model =
 updateNoPieceSelected : Int -> Model -> ( Model, Cmd Msg )
 updateNoPieceSelected index model =
     case boardGet index model.board of
-        Just _ ->
-            ( { model
-                | pieceToMove = Just index
-              }
-            , Cmd.none
-            )
-
-        Nothing ->
+        [] ->
             ( { model
                 | board =
-                    Dict.insert index
-                        (Just
-                            ( case model.turn of
-                                White ->
-                                    model.selectedPieceWhite
+                    boardInsert index
+                        ( case model.turn of
+                            White ->
+                                model.selectedPieceWhite
 
-                                Black ->
-                                    model.selectedPieceBlack
-                            , model.turn
-                            )
+                            Black ->
+                                model.selectedPieceBlack
+                        , model.turn
                         )
                         model.board
                 , turn =
@@ -153,21 +144,29 @@ updateNoPieceSelected index model =
             , Cmd.none
             )
 
+        _ ->
+            ( { model
+                | pieceToMove = Just index
+              }
+            , Cmd.none
+            )
 
-boardGet : Int -> Board -> Maybe ( Piece, Player )
+
+boardGet : Int -> Board -> List ( Piece, Player )
 boardGet index board =
-    Dict.get index board
-        |> Maybe.andThen identity
+    board
+        |> Dict.get index
+        |> Maybe.withDefault []
 
 
 boardInsert : Int -> ( Piece, Player ) -> Board -> Board
 boardInsert index pp board =
-    Dict.insert index (Just pp) board
+    Dict.insert index [ pp ] board
 
 
 boardRemove : Int -> Board -> Board
 boardRemove index board =
-    Dict.insert index Nothing board
+    Dict.insert index [] board
 
 
 view : Model -> Browser.Document Msg
@@ -175,6 +174,15 @@ view model =
     { title = "Tak-Alike"
     , body =
         [ Html.h1 [] [ Html.text "Tak-Alike" ]
+        , Html.h3 []
+            [ Html.text <|
+                case model.turn of
+                    White ->
+                        "White"
+
+                    Black ->
+                        "Black"
+            ]
         , model.board
             |> Dict.toList
             |> List.map (viewBoardSpace model.pieceToMove)
@@ -215,8 +223,8 @@ adjacentIndices size index =
         |> List.map (from2d size)
 
 
-viewBoardSpace : Maybe Int -> ( Int, Maybe ( Piece, Player ) ) -> Html Msg
-viewBoardSpace pieceToMove ( index, possiblePiece ) =
+viewBoardSpace : Maybe Int -> ( Int, List ( Piece, Player ) ) -> Html Msg
+viewBoardSpace pieceToMove ( index, pieceStack ) =
     let
         ps p =
             case p of
@@ -241,17 +249,37 @@ viewBoardSpace pieceToMove ( index, possiblePiece ) =
 
                     else
                         "gray"
+        , Html.Attributes.style "background-color" <|
+            case pieceStack of
+                [] ->
+                    ""
+
+                ( _, White ) :: _ ->
+                    "rgb(245, 245, 245)"
+
+                ( _, Black ) :: _ ->
+                    "rgb(10, 10, 10)"
+        , Html.Attributes.style "color" <|
+            case pieceStack of
+                [] ->
+                    ""
+
+                ( _, White ) :: _ ->
+                    "rgb(10, 10, 10)"
+
+                ( _, Black ) :: _ ->
+                    "rgb(245, 245, 245)"
         ]
-        [ case possiblePiece of
-            Just ( Stone, player ) ->
+        [ case pieceStack of
+            [] ->
+                Html.text " "
+
+            ( Stone, player ) :: _ ->
                 Html.text ("S-" ++ ps player)
 
-            Just ( Wall, player ) ->
+            ( Wall, player ) :: _ ->
                 Html.text ("W-" ++ ps player)
 
-            Just ( CapStone, player ) ->
+            ( CapStone, player ) :: _ ->
                 Html.text ("C-" ++ ps player)
-
-            Nothing ->
-                Html.text " "
         ]
