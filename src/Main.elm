@@ -488,7 +488,6 @@ view model =
                 [ Html.Attributes.style "display" "grid"
                 , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
                 , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
-                , Html.Attributes.style "gap" "4px"
                 ]
         ]
     }
@@ -526,7 +525,7 @@ adjacentIndices size index =
     , ( x, y - 1 )
     , ( x, y + 1 )
     ]
-        |> List.filter (\( x_, y_ ) -> x_ >= 0 && x_ < size && y >= 0 && y < size)
+        |> List.filter (\( x_, y_ ) -> x_ >= 0 && x_ < size && y_ >= 0 && y_ < size)
         |> List.map (from2d size)
 
 
@@ -535,7 +534,8 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
     Html.button
         [ Html.Events.onClick (SpaceSelected index)
         , Html.Attributes.style "border-style" "solid"
-        , Html.Attributes.style "border-width" "10px"
+        , Html.Attributes.style "border-width" "0px"
+        , Html.Attributes.style "padding" "0"
         , Html.Attributes.style "border-color" <|
             case maybeWinner of
                 Nothing ->
@@ -556,37 +556,118 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
 
                     else
                         "gray"
-        , Html.Attributes.style "background-color" <|
-            case pieceStack of
-                [] ->
-                    ""
-
-                ( _, White ) :: _ ->
-                    "rgb(245, 245, 245)"
-
-                ( _, Black ) :: _ ->
-                    "rgb(10, 10, 10)"
-        , Html.Attributes.style "color" <|
-            case pieceStack of
-                [] ->
-                    ""
-
-                ( _, White ) :: _ ->
-                    "rgb(10, 10, 10)"
-
-                ( _, Black ) :: _ ->
-                    "rgb(245, 245, 245)"
         ]
-        [ case pieceStack of
-            [] ->
-                Html.text " "
+        [ let
+            bgStyle =
+                [ Html.Attributes.style "border" "3px solid red"
+                , Html.Attributes.style "border-color" <|
+                    case maybeWinner of
+                        Nothing ->
+                            case pieceToMove of
+                                Nothing ->
+                                    "red"
 
-            ( Stone, _ ) :: _ ->
-                Html.text "STN"
+                                Just idx ->
+                                    if idx == index then
+                                        "cornflowerblue"
 
-            ( Wall, _ ) :: _ ->
-                Html.text "WLL"
+                                    else
+                                        "red"
 
-            ( Capstone, _ ) :: _ ->
-                Html.text "CAP"
+                        Just ( _, indicies ) ->
+                            if List.member index indicies then
+                                "green"
+
+                            else
+                                "red"
+                , Html.Attributes.style "border-radius" "50%"
+                , Html.Attributes.style "height" "200%"
+                , Html.Attributes.style "width" "200%"
+                ]
+          in
+          Html.div
+            [ Html.Attributes.style "display" "grid"
+            , Html.Attributes.style "grid-template-columns" "repeat(2, 5rem)"
+            , Html.Attributes.style "grid-template-rows" "repeat(2, 5rem)"
+            , Html.Attributes.style "overflow" "hidden"
+            ]
+            [ Html.div
+                ([ Html.Attributes.style "grid-column" "1"
+                 , Html.Attributes.style "grid-row" "1"
+                 , Html.Attributes.style "transform" "translate(-50%, -50%)"
+                 ]
+                    ++ bgStyle
+                )
+                []
+            , Html.div
+                ([ Html.Attributes.style "grid-column" "2"
+                 , Html.Attributes.style "grid-row" "1"
+                 , Html.Attributes.style "transform" "translate(0%, -50%)"
+                 ]
+                    ++ bgStyle
+                )
+                []
+            , Html.div
+                ([ Html.Attributes.style "grid-column" "1"
+                 , Html.Attributes.style "grid-row" "2"
+                 , Html.Attributes.style "transform" "translate(-50%, 0%)"
+                 ]
+                    ++ bgStyle
+                )
+                []
+            , Html.div
+                ([ Html.Attributes.style "grid-column" "2"
+                 , Html.Attributes.style "grid-row" "2"
+                 ]
+                    ++ bgStyle
+                )
+                []
+            , Html.div
+                [ Html.Attributes.style "grid-column" "1 / 3"
+                , Html.Attributes.style "grid-row" "1 / 3"
+                , Html.Attributes.style "padding" "10px"
+                , Html.Attributes.style "z-index" "1"
+                ]
+                [ Html.div
+                    [ Html.Attributes.style "width" "100%"
+                    , Html.Attributes.style "height" "100%"
+                    , Html.Attributes.style "display" "flex"
+                    , Html.Attributes.style "align-items" "center"
+                    , Html.Attributes.style "justify-content" "center"
+                    , Html.Attributes.style "background-color" <|
+                        case pieceStack of
+                            [] ->
+                                ""
+
+                            ( _, White ) :: _ ->
+                                "rgb(245, 245, 245)"
+
+                            ( _, Black ) :: _ ->
+                                "rgb(10, 10, 10)"
+                    , Html.Attributes.style "color" <|
+                        case pieceStack of
+                            [] ->
+                                ""
+
+                            ( _, White ) :: _ ->
+                                "rgb(10, 10, 10)"
+
+                            ( _, Black ) :: _ ->
+                                "rgb(245, 245, 245)"
+                    ]
+                    [ case pieceStack of
+                        [] ->
+                            Html.text ""
+
+                        ( Stone, _ ) :: _ ->
+                            Html.text "STN"
+
+                        ( Wall, _ ) :: _ ->
+                            Html.text "WLL"
+
+                        ( Capstone, _ ) :: _ ->
+                            Html.text "CAP"
+                    ]
+                ]
+            ]
         ]
