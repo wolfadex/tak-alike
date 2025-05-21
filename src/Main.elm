@@ -1,6 +1,7 @@
 module Main exposing (main)
 
 import Browser
+import Css
 import Dict exposing (Dict)
 import Html exposing (Html)
 import Html.Attributes
@@ -52,7 +53,11 @@ type Player
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( initGame 3, Cmd.none )
+    let
+        baseGame =
+            initGame 3
+    in
+    ( { baseGame | winner = Just ( White, [] ) }, Cmd.none )
 
 
 initGame : Int -> Model
@@ -412,9 +417,11 @@ view model =
                     [ Html.button
                         [ Html.Events.onClick NewGame ]
                         [ Html.text "New game" ]
+                    , Html.br [] []
+                    , Html.br [] []
                     , Html.label
-                        []
-                        (Html.span [] [ Html.text "Board size" ]
+                        [ Css.sizeSelecttion ]
+                        (Html.span [] [ Html.text "Board size:" ]
                             :: List.map
                                 (\size ->
                                     Html.button
@@ -428,12 +435,14 @@ view model =
                     ]
         , Html.h3 []
             [ Html.text <|
-                case model.turn of
-                    White ->
-                        "White"
+                "Turn: "
+                    ++ (case model.turn of
+                            White ->
+                                "White"
 
-                    Black ->
-                        "Black"
+                            Black ->
+                                "Black"
+                       )
             ]
         , Html.p
             []
@@ -471,9 +480,9 @@ view model =
                     ]
                     [ Html.text "Capstone" ]
                 ]
+            , Html.br [] []
             , Html.div
-                [ Html.Attributes.style "display" "flex"
-                , Html.Attributes.style "gap" "0.5rem"
+                [ Css.stoneCounts
                 ]
                 [ Html.span []
                     [ Html.text
@@ -507,7 +516,7 @@ view model =
             |> Dict.toList
             |> List.map (viewBoardSpace model.winner model.pieceToMove)
             |> Html.div
-                [ Html.Attributes.style "display" "grid"
+                [ Css.board
                 , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
                 , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
                 ]
@@ -555,9 +564,7 @@ viewBoardSpace : Maybe ( Player, List Int ) -> Maybe Int -> ( Int, List ( Piece,
 viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
     Html.button
         [ Html.Events.onClick (SpaceSelected index)
-        , Html.Attributes.style "border-style" "solid"
-        , Html.Attributes.style "border-width" "0px"
-        , Html.Attributes.style "padding" "0"
+        , Css.boardSpace
         , Html.Attributes.style "border-color" <|
             case maybeWinner of
                 Nothing ->
@@ -582,8 +589,7 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
         [ let
             bgStyle : List (Html.Attribute msg)
             bgStyle =
-                [ Html.Attributes.style "border" "3px solid red"
-                , Html.Attributes.style "border-color" <|
+                [ Html.Attributes.style "border-color" <|
                     case maybeWinner of
                         Nothing ->
                             case pieceToMove of
@@ -603,16 +609,11 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
 
                             else
                                 "red"
-                , Html.Attributes.style "border-radius" "50%"
-                , Html.Attributes.style "height" "200%"
-                , Html.Attributes.style "width" "200%"
+                , Css.boardSpaceBackground
                 ]
           in
           Html.div
-            [ Html.Attributes.style "display" "grid"
-            , Html.Attributes.style "grid-template-columns" "repeat(2, 5rem)"
-            , Html.Attributes.style "grid-template-rows" "repeat(2, 5rem)"
-            , Html.Attributes.style "overflow" "hidden"
+            [ Css.boardSpaceGrid
             ]
             [ Html.div
                 ([ Html.Attributes.style "grid-column" "1"
