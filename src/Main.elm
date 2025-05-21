@@ -52,11 +52,14 @@ init _ =
     ( initGame, Cmd.none )
 
 
+initGame : Model
 initGame =
     let
+        size : Int
         size =
             3
 
+        stoneCount : Int
         stoneCount =
             if size == 3 then
                 10
@@ -76,6 +79,7 @@ initGame =
             else
                 0
 
+        capstoneCount : Int
         capstoneCount =
             if size == 3 then
                 0
@@ -185,6 +189,7 @@ updateNoPieceSelected index model =
     case boardGet index model.board of
         [] ->
             let
+                piece : Piece
                 piece =
                     case model.turn of
                         White ->
@@ -284,42 +289,42 @@ boardRemove index board =
 checkWinCondition : Int -> Board -> Maybe ( Player, List Int )
 checkWinCondition size board =
     let
+        xStart : List Int
         xStart =
             List.range 0 (size - 1)
-                |> List.concatMap
+                |> List.map
                     (\x ->
-                        [ from2d size ( x, 0 )
-                        ]
+                        from2d size ( x, 0 )
                     )
 
+        xEnd : List Int
         xEnd =
             List.range 0 (size - 1)
-                |> List.concatMap
+                |> List.map
                     (\x ->
-                        [ from2d size ( x, size - 1 )
-                        ]
+                        from2d size ( x, size - 1 )
                     )
     in
-    case checkWinConditionHelper size board (Debug.log "start" xStart) (Debug.log "end" xEnd) of
+    case checkWinConditionHelper size board xStart xEnd of
         Just w ->
             Just w
 
         Nothing ->
             let
+                yStart : List Int
                 yStart =
                     List.range 0 (size - 1)
-                        |> List.concatMap
+                        |> List.map
                             (\y ->
-                                [ from2d size ( 0, y )
-                                ]
+                                from2d size ( 0, y )
                             )
 
+                yEnd : List Int
                 yEnd =
                     List.range 0 (size - 1)
-                        |> List.concatMap
+                        |> List.map
                             (\y ->
-                                [ from2d size ( 0, size - 1 )
-                                ]
+                                from2d size ( size - 1, y )
                             )
             in
             checkWinConditionHelper size board yStart yEnd
@@ -338,7 +343,7 @@ checkWinConditionHelper size board start end =
 
                 ( piece, player ) :: _ ->
                     if piece == Stone || piece == Capstone then
-                        case floodFill size board (Debug.log "ff next" next) (Debug.log "ff player" player) |> Debug.log "ff result" of
+                        case floodFill size board next player of
                             [] ->
                                 checkWinConditionHelper size board rest end
 
@@ -361,9 +366,7 @@ floodFill size board start player =
 floodFillHelper : Int -> Board -> Int -> Player -> List Int -> List Int
 floodFillHelper size board start player collected =
     start
-        |> Debug.log "ff start"
         |> adjacentIndices size
-        |> Debug.log "ff adjacent"
         |> List.foldl
             (\idx coll ->
                 if List.member idx coll then
@@ -417,6 +420,7 @@ view model =
             []
             [ Html.h4 [] [ Html.text "Piece to place" ]
             , let
+                isSelected : Piece -> Html.Attribute msg
                 isSelected piece =
                     (case model.turn of
                         White ->
@@ -558,6 +562,7 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
                         "gray"
         ]
         [ let
+            bgStyle : List (Html.Attribute msg)
             bgStyle =
                 [ Html.Attributes.style "border" "3px solid red"
                 , Html.Attributes.style "border-color" <|
