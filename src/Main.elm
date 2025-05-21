@@ -24,6 +24,10 @@ type alias Model =
     , selectedPieceWhite : Piece
     , selectedPieceBlack : Piece
     , pieceToMove : Maybe Int
+    , stoneCountWhite : Int
+    , stoneCountBlack : Int
+    , capstoneCountWhite : Int
+    , capstoneCountBlack : Int
     }
 
 
@@ -47,6 +51,44 @@ init _ =
     let
         size =
             5
+
+        stoneCount =
+            if size == 3 then
+                10
+
+            else if size == 4 then
+                15
+
+            else if size == 5 then
+                21
+
+            else if size == 6 then
+                30
+
+            else if size == 8 then
+                50
+
+            else
+                0
+
+        capstoneCount =
+            if size == 3 then
+                0
+
+            else if size == 4 then
+                0
+
+            else if size == 5 then
+                1
+
+            else if size == 6 then
+                1
+
+            else if size == 8 then
+                2
+
+            else
+                0
     in
     ( { board =
             List.repeat (size * size) []
@@ -57,6 +99,10 @@ init _ =
       , selectedPieceWhite = Stone
       , selectedPieceBlack = Stone
       , pieceToMove = Nothing
+      , stoneCountWhite = stoneCount
+      , stoneCountBlack = stoneCount
+      , capstoneCountWhite = capstoneCount
+      , capstoneCountBlack = capstoneCount
       }
     , Cmd.none
     )
@@ -120,29 +166,77 @@ updateNoPieceSelected : Int -> Model -> ( Model, Cmd Msg )
 updateNoPieceSelected index model =
     case boardGet index model.board of
         [] ->
-            ( { model
-                | board =
-                    boardInsert index
-                        ( case model.turn of
-                            White ->
-                                model.selectedPieceWhite
-
-                            Black ->
-                                model.selectedPieceBlack
-                        , model.turn
-                        )
-                        model.board
-                , turn =
+            let
+                piece =
                     case model.turn of
                         White ->
-                            Black
+                            model.selectedPieceWhite
 
                         Black ->
-                            White
-                , pieceToMove = Nothing
-              }
-            , Cmd.none
-            )
+                            model.selectedPieceBlack
+
+                ( remStones, remCapstones, ( decStone, decCapstone ) ) =
+                    case model.turn of
+                        White ->
+                            ( model.stoneCountWhite
+                            , model.capstoneCountWhite
+                            , ( \m -> { m | stoneCountWhite = m.stoneCountWhite - 1 }
+                              , \m -> { m | capstoneCountWhite = m.capstoneCountWhite - 1 }
+                              )
+                            )
+
+                        Black ->
+                            ( model.stoneCountBlack
+                            , model.capstoneCountBlack
+                            , ( \m -> { m | stoneCountBlack = m.stoneCountBlack - 1 }
+                              , \m -> { m | capstoneCountBlack = m.capstoneCountBlack - 1 }
+                              )
+                            )
+            in
+            case ( piece, remStones, remCapstones ) of
+                ( CapStone, _, 0 ) ->
+                    ( model, Cmd.none )
+
+                ( CapStone, _, _ ) ->
+                    ( { model
+                        | board =
+                            boardInsert index
+                                ( piece, model.turn )
+                                model.board
+                        , turn =
+                            case model.turn of
+                                White ->
+                                    Black
+
+                                Black ->
+                                    White
+                        , pieceToMove = Nothing
+                      }
+                        |> decCapstone
+                    , Cmd.none
+                    )
+
+                ( _, 0, _ ) ->
+                    ( model, Cmd.none )
+
+                _ ->
+                    ( { model
+                        | board =
+                            boardInsert index
+                                ( piece, model.turn )
+                                model.board
+                        , turn =
+                            case model.turn of
+                                White ->
+                                    Black
+
+                                Black ->
+                                    White
+                        , pieceToMove = Nothing
+                      }
+                        |> decStone
+                    , Cmd.none
+                    )
 
         _ ->
             ( { model
@@ -182,6 +276,55 @@ view model =
 
                     Black ->
                         "Black"
+            ]
+        , Html.p
+            []
+            [ Html.h4 [] [ Html.text "Piece to place" ]
+            , Html.div
+                [ Html.Attributes.style "display" "flex"
+                , Html.Attributes.style "gap" "0.5rem"
+                ]
+                [ Html.button
+                    [ Html.Events.onClick (SetSelectedPiece Stone) ]
+                    [ Html.text "Stone" ]
+                , Html.button
+                    [ Html.Events.onClick (SetSelectedPiece Wall) ]
+                    [ Html.text "Wall" ]
+                , Html.button
+                    [ Html.Events.onClick (SetSelectedPiece CapStone) ]
+                    [ Html.text "CapStone" ]
+                ]
+            , Html.div
+                [ Html.Attributes.style "display" "flex"
+                , Html.Attributes.style "gap" "0.5rem"
+                ]
+                [ Html.span []
+                    [ Html.text
+                        ("Stones left: "
+                            ++ (String.fromInt <|
+                                    case model.turn of
+                                        White ->
+                                            model.stoneCountWhite
+
+                                        Black ->
+                                            model.stoneCountBlack
+                               )
+                        )
+                    ]
+                , Html.span []
+                    [ Html.text
+                        ("Captones left: "
+                            ++ (String.fromInt <|
+                                    case model.turn of
+                                        White ->
+                                            model.capstoneCountWhite
+
+                                        Black ->
+                                            model.capstoneCountBlack
+                               )
+                        )
+                    ]
+                ]
             ]
         , model.board
             |> Dict.toList
@@ -229,10 +372,10 @@ viewBoardSpace pieceToMove ( index, pieceStack ) =
         ps p =
             case p of
                 Black ->
-                    "B"
+                    "BLK"
 
                 White ->
-                    "W"
+                    "WHT"
     in
     Html.button
         [ Html.Events.onClick (SpaceSelected index)
@@ -275,11 +418,11 @@ viewBoardSpace pieceToMove ( index, pieceStack ) =
                 Html.text " "
 
             ( Stone, player ) :: _ ->
-                Html.text ("S-" ++ ps player)
+                Html.text ("STN-" ++ ps player)
 
             ( Wall, player ) :: _ ->
-                Html.text ("W-" ++ ps player)
+                Html.text ("WLL-" ++ ps player)
 
             ( CapStone, player ) :: _ ->
-                Html.text ("C-" ++ ps player)
+                Html.text ("CAP-" ++ ps player)
         ]
