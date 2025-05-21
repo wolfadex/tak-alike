@@ -684,13 +684,13 @@ viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
                             Html.text ""
 
                         ( Stone, _ ) :: _ ->
-                            Html.text "STN"
+                            Html.text "STONE"
 
                         ( Wall, _ ) :: _ ->
-                            Html.text "WLL"
+                            Html.text "WALL"
 
                         ( Capstone, _ ) :: _ ->
-                            Html.text "CAP"
+                            Html.text "CAPSTONE"
                     ]
                 ]
             ]
