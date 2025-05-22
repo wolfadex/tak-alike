@@ -1,67 +1,44 @@
-module Main exposing (main)
+module Frontend exposing (..)
 
-import Browser
+import Browser exposing (UrlRequest(..))
+import Browser.Navigation as Nav
 import Css
-import Dict exposing (Dict)
+import Dict
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
+import Lamdera
+import Types exposing (..)
+import Url
 
 
-main : Program () Model Msg
-main =
-    Browser.document
+app =
+    Lamdera.frontend
         { init = init
-        , view = view
+        , onUrlRequest = UrlClicked
+        , onUrlChange = UrlChanged
         , update = update
-        , subscriptions = subscriptions
+        , updateFromBackend = updateFromBackend
+        , subscriptions = \_ -> Sub.none
+        , view = view
         }
 
 
-type alias Model =
-    { board : Board
-    , size : Int
-    , turn : Player
-    , selectedPieceWhite : Piece
-    , selectedPieceBlack : Piece
-    , pieceToMove : Maybe Int
-    , stoneCountWhite : Int
-    , stoneCountBlack : Int
-    , capstoneCountWhite : Int
-    , capstoneCountBlack : Int
-    , winner : Maybe ( Player, List Int )
-    , stackSizeSelected : Int
-
-    --
-    , newGameSize : Int
-    }
+init : Url.Url -> Nav.Key -> ( FrontendModel, Cmd FrontendMsg )
+init url key =
+    ( { key = key
+      , game =
+            let
+                baseGame =
+                    initGame 3
+            in
+            { baseGame | winner = Just ( White, [] ) }
+      }
+    , Cmd.none
+    )
 
 
-type alias Board =
-    Dict Int (List ( Piece, Player ))
-
-
-type Piece
-    = Stone
-    | Wall
-    | Capstone
-
-
-type Player
-    = Black
-    | White
-
-
-init : () -> ( Model, Cmd Msg )
-init _ =
-    let
-        baseGame =
-            initGame 3
-    in
-    ( { baseGame | winner = Just ( White, [] ) }, Cmd.none )
-
-
-initGame : Int -> Model
+initGame : Int -> Game
 initGame size =
     let
         stoneCount : Int
@@ -123,48 +100,57 @@ initGame size =
     }
 
 
-subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Sub.none
-
-
-type Msg
-    = NewGame
-    | SetGameSize Int
-    | SpaceSelected Int
-    | SetSelectedPiece Piece
-    | StackSizeSelected String
-
-
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : FrontendMsg -> FrontendModel -> ( FrontendModel, Cmd FrontendMsg )
 update msg model =
     case msg of
+        UrlClicked urlRequest ->
+            case urlRequest of
+                Internal url ->
+                    ( model
+                    , Nav.pushUrl model.key (Url.toString url)
+                    )
+
+                External url ->
+                    ( model
+                    , Nav.load url
+                    )
+
+        UrlChanged url ->
+            ( model, Cmd.none )
+
+        GameMessage gameMsg ->
+            updateGame gameMsg model.game
+                |> Tuple.mapFirst (\game -> { model | game = game })
+
+
+updateGame msg game =
+    case msg of
         NewGame ->
-            ( initGame model.newGameSize, Cmd.none )
+            ( initGame game.newGameSize, Cmd.none )
 
         SetGameSize size ->
-            ( { model | newGameSize = size }, Cmd.none )
+            ( { game | newGameSize = size }, Cmd.none )
 
         StackSizeSelected sizeStr ->
             case String.toInt sizeStr of
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( game, Cmd.none )
 
                 Just size ->
-                    ( { model | stackSizeSelected = size }, Cmd.none )
+                    ( { game | stackSizeSelected = size }, Cmd.none )
 
         SetSelectedPiece piece ->
-            case model.turn of
+            case game.turn of
                 White ->
-                    ( { model | selectedPieceWhite = piece }, Cmd.none )
+                    ( { game | selectedPieceWhite = piece }, Cmd.none )
 
                 Black ->
-                    ( { model | selectedPieceBlack = piece }, Cmd.none )
+                    ( { game | selectedPieceBlack = piece }, Cmd.none )
 
         SpaceSelected index ->
-            case model.winner of
+            case game.winner of
                 Just _ ->
-                    ( model, Cmd.none )
+                    ( game, Cmd.none )
 
                 Nothing ->
                     Tuple.mapFirst
@@ -172,28 +158,28 @@ update msg model =
                             { m | winner = checkWinCondition m.size m.board }
                         )
                     <|
-                        case model.pieceToMove of
+                        case game.pieceToMove of
                             Just idx ->
                                 if index == idx then
-                                    ( { model | pieceToMove = Nothing }, Cmd.none )
+                                    ( { game | pieceToMove = Nothing }, Cmd.none )
 
-                                else if List.member index (adjacentIndices model.size idx) then
-                                    case boardGet idx model.board of
+                                else if List.member index (adjacentIndices game.size idx) then
+                                    case boardGet idx game.board of
                                         [] ->
-                                            ( model, Cmd.none )
+                                            ( game, Cmd.none )
 
                                         (( sourceTopPiece, player ) :: _) as sourceStack ->
-                                            if player == model.turn then
-                                                case boardGet index model.board of
+                                            if player == game.turn then
+                                                case boardGet index game.board of
                                                     [] ->
-                                                        ( { model
+                                                        ( { game
                                                             | board =
-                                                                model.board
+                                                                game.board
                                                                     |> boardInsert index sourceStack
                                                                     |> boardRemove idx
                                                             , pieceToMove = Nothing
                                                             , turn =
-                                                                case model.turn of
+                                                                case game.turn of
                                                                     White ->
                                                                         Black
 
@@ -204,14 +190,14 @@ update msg model =
                                                         )
 
                                                     (( Stone, _ ) :: _) as destinationStack ->
-                                                        ( { model
+                                                        ( { game
                                                             | board =
-                                                                model.board
+                                                                game.board
                                                                     |> boardInsert index (sourceStack ++ destinationStack)
                                                                     |> boardRemove idx
                                                             , pieceToMove = Nothing
                                                             , turn =
-                                                                case model.turn of
+                                                                case game.turn of
                                                                     White ->
                                                                         Black
 
@@ -223,14 +209,14 @@ update msg model =
 
                                                     ( Wall, plr ) :: destinationStack ->
                                                         if sourceTopPiece == Capstone then
-                                                            ( { model
+                                                            ( { game
                                                                 | board =
-                                                                    model.board
+                                                                    game.board
                                                                         |> boardInsert index (sourceStack ++ ( Stone, plr ) :: destinationStack)
                                                                         |> boardRemove idx
                                                                 , pieceToMove = Nothing
                                                                 , turn =
-                                                                    case model.turn of
+                                                                    case game.turn of
                                                                         White ->
                                                                             Black
 
@@ -241,58 +227,65 @@ update msg model =
                                                             )
 
                                                         else
-                                                            ( { model | pieceToMove = Just index }, Cmd.none )
+                                                            ( { game | pieceToMove = Just index }, Cmd.none )
 
                                                     _ ->
-                                                        ( { model | pieceToMove = Just index }, Cmd.none )
+                                                        ( { game | pieceToMove = Just index }, Cmd.none )
 
                                             else
-                                                case boardGet index model.board of
+                                                case boardGet index game.board of
                                                     [] ->
-                                                        ( { model | pieceToMove = Nothing }, Cmd.none )
+                                                        ( { game | pieceToMove = Nothing }, Cmd.none )
 
                                                     _ ->
-                                                        ( { model | pieceToMove = Just index }, Cmd.none )
+                                                        ( { game | pieceToMove = Just index }, Cmd.none )
 
                                 else
-                                    case boardGet index model.board of
+                                    case boardGet index game.board of
                                         [] ->
-                                            ( { model | pieceToMove = Nothing }, Cmd.none )
+                                            ( { game | pieceToMove = Nothing }, Cmd.none )
 
                                         _ ->
-                                            ( { model | pieceToMove = Just index }, Cmd.none )
+                                            ( { game | pieceToMove = Just index }, Cmd.none )
 
                             Nothing ->
-                                updateNoPieceSelected index model
+                                updateNoPieceSelected index game
 
 
-updateNoPieceSelected : Int -> Model -> ( Model, Cmd Msg )
-updateNoPieceSelected index model =
-    case boardGet index model.board of
+updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Cmd FrontendMsg )
+updateFromBackend msg model =
+    case msg of
+        NoOpToFrontend ->
+            ( model, Cmd.none )
+
+
+updateNoPieceSelected : Int -> Game -> ( Game, Cmd FrontendMsg )
+updateNoPieceSelected index game =
+    case boardGet index game.board of
         [] ->
             let
                 piece : Piece
                 piece =
-                    case model.turn of
+                    case game.turn of
                         White ->
-                            model.selectedPieceWhite
+                            game.selectedPieceWhite
 
                         Black ->
-                            model.selectedPieceBlack
+                            game.selectedPieceBlack
 
                 ( remStones, remCapstones, ( decStone, decCapstone ) ) =
-                    case model.turn of
+                    case game.turn of
                         White ->
-                            ( model.stoneCountWhite
-                            , model.capstoneCountWhite
+                            ( game.stoneCountWhite
+                            , game.capstoneCountWhite
                             , ( \m -> { m | stoneCountWhite = m.stoneCountWhite - 1 }
                               , \m -> { m | capstoneCountWhite = m.capstoneCountWhite - 1 }
                               )
                             )
 
                         Black ->
-                            ( model.stoneCountBlack
-                            , model.capstoneCountBlack
+                            ( game.stoneCountBlack
+                            , game.capstoneCountBlack
                             , ( \m -> { m | stoneCountBlack = m.stoneCountBlack - 1 }
                               , \m -> { m | capstoneCountBlack = m.capstoneCountBlack - 1 }
                               )
@@ -300,16 +293,16 @@ updateNoPieceSelected index model =
             in
             case ( piece, remStones, remCapstones ) of
                 ( Capstone, _, 0 ) ->
-                    ( model, Cmd.none )
+                    ( game, Cmd.none )
 
                 ( Capstone, _, _ ) ->
-                    ( { model
+                    ( { game
                         | board =
                             boardInsert index
-                                [ ( piece, model.turn ) ]
-                                model.board
+                                [ ( piece, game.turn ) ]
+                                game.board
                         , turn =
-                            case model.turn of
+                            case game.turn of
                                 White ->
                                     Black
 
@@ -322,16 +315,16 @@ updateNoPieceSelected index model =
                     )
 
                 ( _, 0, _ ) ->
-                    ( model, Cmd.none )
+                    ( game, Cmd.none )
 
                 _ ->
-                    ( { model
+                    ( { game
                         | board =
                             boardInsert index
-                                [ ( piece, model.turn ) ]
-                                model.board
+                                [ ( piece, game.turn ) ]
+                                game.board
                         , turn =
-                            case model.turn of
+                            case game.turn of
                                 White ->
                                     Black
 
@@ -344,9 +337,9 @@ updateNoPieceSelected index model =
                     )
 
         _ ->
-            ( { model
+            ( { game
                 | pieceToMove = Just index
-                , stackSizeSelected = List.length (boardGet index model.board)
+                , stackSizeSelected = List.length (boardGet index game.board)
               }
             , Cmd.none
             )
@@ -473,211 +466,213 @@ floodFillHelper size board start player collected =
             collected
 
 
-
--- VIEW
-
-
-view : Model -> Browser.Document Msg
+view : FrontendModel -> Browser.Document FrontendMsg
 view model =
     { title = "Tak-Alike"
     , body =
-        [ Html.h1 [] [ Html.text "Tak-Alike" ]
-        , case model.winner of
+        viewGame model.game
+            |> List.map (Html.map GameMessage)
+    }
+
+
+viewGame : Game -> List (Html GameMsg)
+viewGame game =
+    [ Html.h1 [] [ Html.text "Tak-Alike" ]
+    , case game.winner of
+        Nothing ->
+            Html.text ""
+
+        Just _ ->
+            Html.div []
+                [ Html.button
+                    [ Html.Events.onClick NewGame ]
+                    [ Html.text "New game" ]
+                , Html.br [] []
+                , Html.br [] []
+                , Html.label
+                    [ Css.sizeSelecttion ]
+                    (Html.span [] [ Html.text "Board size:" ]
+                        :: List.map
+                            (\size ->
+                                Html.button
+                                    [ Html.Events.onClick (SetGameSize size)
+                                    , buttonPressed (game.newGameSize == size)
+                                    ]
+                                    [ Html.text (String.fromInt size) ]
+                            )
+                            [ 3, 4, 5, 6, 8 ]
+                    )
+                ]
+    , Html.h3 []
+        [ Html.text <|
+            "Turn: "
+                ++ (case game.turn of
+                        White ->
+                            "White"
+
+                        Black ->
+                            "Black"
+                   )
+        ]
+    , Html.p
+        []
+        [ Html.h4 [] [ Html.text "Piece to place" ]
+        , let
+            isSelected : Piece -> Html.Attribute msg
+            isSelected piece =
+                (case game.turn of
+                    White ->
+                        game.selectedPieceWhite
+
+                    Black ->
+                        game.selectedPieceBlack
+                )
+                    |> (==) piece
+                    |> buttonPressed
+          in
+          Html.div
+            [ Html.Attributes.style "display" "flex"
+            , Html.Attributes.style "gap" "0.5rem"
+            ]
+            [ Html.button
+                [ Html.Events.onClick (SetSelectedPiece Stone)
+                , isSelected Stone
+                ]
+                [ Html.text "Stone" ]
+            , Html.button
+                [ Html.Events.onClick (SetSelectedPiece Wall)
+                , isSelected Wall
+                ]
+                [ Html.text "Wall" ]
+            , Html.button
+                [ Html.Events.onClick (SetSelectedPiece Capstone)
+                , isSelected Capstone
+                ]
+                [ Html.text "Capstone" ]
+            ]
+        , Html.br [] []
+        , Html.div
+            [ Css.stoneCounts
+            ]
+            [ Html.span []
+                [ Html.text
+                    ("Stones left: "
+                        ++ (String.fromInt <|
+                                case game.turn of
+                                    White ->
+                                        game.stoneCountWhite
+
+                                    Black ->
+                                        game.stoneCountBlack
+                           )
+                    )
+                ]
+            , Html.span []
+                [ Html.text
+                    ("Captones left: "
+                        ++ (String.fromInt <|
+                                case game.turn of
+                                    White ->
+                                        game.capstoneCountWhite
+
+                                    Black ->
+                                        game.capstoneCountBlack
+                           )
+                    )
+                ]
+            ]
+        ]
+    , Html.div
+        [ Css.gameplayArea ]
+        [ game.board
+            |> Dict.toList
+            |> List.map (viewBoardSpace game.winner game.pieceToMove)
+            |> Html.div
+                [ Css.board
+                , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt game.size ++ ", 10rem)")
+                , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt game.size ++ ", 10rem)")
+                ]
+        , case game.pieceToMove of
             Nothing ->
                 Html.text ""
 
-            Just _ ->
-                Html.div []
-                    [ Html.button
-                        [ Html.Events.onClick NewGame ]
-                        [ Html.text "New game" ]
-                    , Html.br [] []
-                    , Html.br [] []
-                    , Html.label
-                        [ Css.sizeSelecttion ]
-                        (Html.span [] [ Html.text "Board size:" ]
-                            :: List.map
-                                (\size ->
-                                    Html.button
-                                        [ Html.Events.onClick (SetGameSize size)
-                                        , buttonPressed (model.newGameSize == size)
-                                        ]
-                                        [ Html.text (String.fromInt size) ]
-                                )
-                                [ 3, 4, 5, 6, 8 ]
-                        )
-                    ]
-        , Html.h3 []
-            [ Html.text <|
-                "Turn: "
-                    ++ (case model.turn of
-                            White ->
-                                "White"
+            Just index ->
+                let
+                    selectedStack : List ( Piece, Player )
+                    selectedStack =
+                        boardGet index game.board
 
-                            Black ->
-                                "Black"
-                       )
-            ]
-        , Html.p
-            []
-            [ Html.h4 [] [ Html.text "Piece to place" ]
-            , let
-                isSelected : Piece -> Html.Attribute msg
-                isSelected piece =
-                    (case model.turn of
-                        White ->
-                            model.selectedPieceWhite
-
-                        Black ->
-                            model.selectedPieceBlack
-                    )
-                        |> (==) piece
-                        |> buttonPressed
-              in
-              Html.div
-                [ Html.Attributes.style "display" "flex"
-                , Html.Attributes.style "gap" "0.5rem"
-                ]
-                [ Html.button
-                    [ Html.Events.onClick (SetSelectedPiece Stone)
-                    , isSelected Stone
-                    ]
-                    [ Html.text "Stone" ]
-                , Html.button
-                    [ Html.Events.onClick (SetSelectedPiece Wall)
-                    , isSelected Wall
-                    ]
-                    [ Html.text "Wall" ]
-                , Html.button
-                    [ Html.Events.onClick (SetSelectedPiece Capstone)
-                    , isSelected Capstone
-                    ]
-                    [ Html.text "Capstone" ]
-                ]
-            , Html.br [] []
-            , Html.div
-                [ Css.stoneCounts
-                ]
-                [ Html.span []
-                    [ Html.text
-                        ("Stones left: "
-                            ++ (String.fromInt <|
-                                    case model.turn of
-                                        White ->
-                                            model.stoneCountWhite
-
-                                        Black ->
-                                            model.stoneCountBlack
-                               )
-                        )
-                    ]
-                , Html.span []
-                    [ Html.text
-                        ("Captones left: "
-                            ++ (String.fromInt <|
-                                    case model.turn of
-                                        White ->
-                                            model.capstoneCountWhite
-
-                                        Black ->
-                                            model.capstoneCountBlack
-                               )
-                        )
-                    ]
-                ]
-            ]
-        , Html.div
-            [ Css.gameplayArea ]
-            [ model.board
-                |> Dict.toList
-                |> List.map (viewBoardSpace model.winner model.pieceToMove)
-                |> Html.div
-                    [ Css.board
-                    , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
-                    , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt model.size ++ ", 10rem)")
-                    ]
-            , case model.pieceToMove of
-                Nothing ->
+                    stackSize : Int
+                    stackSize =
+                        List.length selectedStack
+                in
+                if stackSize == 0 then
                     Html.text ""
 
-                Just index ->
-                    let
-                        selectedStack : List ( Piece, Player )
-                        selectedStack =
-                            boardGet index model.board
-
-                        stackSize : Int
-                        stackSize =
-                            List.length selectedStack
-                    in
-                    if stackSize == 0 then
-                        Html.text ""
-
-                    else
-                        Html.div
-                            [ Css.selectedStack ]
-                            [ Html.h3 [] [ Html.text "Selected stack" ]
-                            , Html.div
-                                [ Css.selectedStackDisplay
-                                , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt stackSize ++ ", 1fr)")
-                                ]
-                                ((if stackSize == 1 then
-                                    Html.text ""
-
-                                  else
-                                    Html.input
-                                        [ Css.stackSelectionInput
-                                        , Html.Attributes.style "grid-column" "2"
-                                        , Html.Attributes.style "grid-row" ("1 / " ++ String.fromInt (min model.size stackSize + 1))
-                                        , Html.Attributes.type_ "range"
-                                        , Html.Attributes.step "1"
-                                        , Html.Attributes.min "1"
-                                        , Html.Attributes.max (String.fromInt stackSize)
-                                        , Html.Attributes.value (String.fromInt model.stackSizeSelected)
-                                        , Html.Events.onInput StackSizeSelected
-                                        ]
-                                        []
-                                 )
-                                    :: (selectedStack
-                                            |> List.indexedMap
-                                                (\idx ( piece, player ) ->
-                                                    Html.div
-                                                        [ Html.Attributes.style "background-color" <|
-                                                            case player of
-                                                                White ->
-                                                                    "rgb(245, 245, 245)"
-
-                                                                Black ->
-                                                                    "rgb(10, 10, 10)"
-                                                        , Html.Attributes.style "color" <|
-                                                            case player of
-                                                                White ->
-                                                                    "rgb(10, 10, 10)"
-
-                                                                Black ->
-                                                                    "rgb(245, 245, 245)"
-                                                        , Css.stackPiece
-                                                        , Html.Attributes.style "grid-column" "1"
-                                                        , Html.Attributes.style "grid-row" (String.fromInt (idx + 1))
-                                                        ]
-                                                        [ Html.text <|
-                                                            case piece of
-                                                                Stone ->
-                                                                    "STONE"
-
-                                                                Wall ->
-                                                                    "WALL"
-
-                                                                Capstone ->
-                                                                    "CAPSTONE"
-                                                        ]
-                                                )
-                                       )
-                                )
+                else
+                    Html.div
+                        [ Css.selectedStack ]
+                        [ Html.h3 [] [ Html.text "Selected stack" ]
+                        , Html.div
+                            [ Css.selectedStackDisplay
+                            , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt stackSize ++ ", 1fr)")
                             ]
-            ]
+                            ((if stackSize == 1 then
+                                Html.text ""
+
+                              else
+                                Html.input
+                                    [ Css.stackSelectionInput
+                                    , Html.Attributes.style "grid-column" "2"
+                                    , Html.Attributes.style "grid-row" ("1 / " ++ String.fromInt (min game.size stackSize + 1))
+                                    , Html.Attributes.type_ "range"
+                                    , Html.Attributes.step "1"
+                                    , Html.Attributes.min "1"
+                                    , Html.Attributes.max (String.fromInt stackSize)
+                                    , Html.Attributes.value (String.fromInt game.stackSizeSelected)
+                                    , Html.Events.onInput StackSizeSelected
+                                    ]
+                                    []
+                             )
+                                :: (selectedStack
+                                        |> List.indexedMap
+                                            (\idx ( piece, player ) ->
+                                                Html.div
+                                                    [ Html.Attributes.style "background-color" <|
+                                                        case player of
+                                                            White ->
+                                                                "rgb(245, 245, 245)"
+
+                                                            Black ->
+                                                                "rgb(10, 10, 10)"
+                                                    , Html.Attributes.style "color" <|
+                                                        case player of
+                                                            White ->
+                                                                "rgb(10, 10, 10)"
+
+                                                            Black ->
+                                                                "rgb(245, 245, 245)"
+                                                    , Css.stackPiece
+                                                    , Html.Attributes.style "grid-column" "1"
+                                                    , Html.Attributes.style "grid-row" (String.fromInt (idx + 1))
+                                                    ]
+                                                    [ Html.text <|
+                                                        case piece of
+                                                            Stone ->
+                                                                "STONE"
+
+                                                            Wall ->
+                                                                "WALL"
+
+                                                            Capstone ->
+                                                                "CAPSTONE"
+                                                    ]
+                                            )
+                                   )
+                            )
+                        ]
         ]
-    }
+    ]
 
 
 boolToAttribute : Bool -> String
@@ -689,34 +684,7 @@ boolToAttribute bool =
         "false"
 
 
-to2d : Int -> Int -> ( Int, Int )
-to2d size index =
-    ( index |> modBy size
-    , index // size
-    )
-
-
-from2d : Int -> ( Int, Int ) -> Int
-from2d size ( x, y ) =
-    y * size + x
-
-
-adjacentIndices : Int -> Int -> List Int
-adjacentIndices size index =
-    let
-        ( x, y ) =
-            to2d size index
-    in
-    [ ( x - 1, y )
-    , ( x + 1, y )
-    , ( x, y - 1 )
-    , ( x, y + 1 )
-    ]
-        |> List.filter (\( x_, y_ ) -> x_ >= 0 && x_ < size && y_ >= 0 && y_ < size)
-        |> List.map (from2d size)
-
-
-viewBoardSpace : Maybe ( Player, List Int ) -> Maybe Int -> ( Int, List ( Piece, Player ) ) -> Html Msg
+viewBoardSpace : Maybe ( Player, List Int ) -> Maybe Int -> ( Int, List ( Piece, Player ) ) -> Html GameMsg
 viewBoardSpace maybeWinner pieceToMove ( index, pieceStack ) =
     Html.button
         [ Html.Events.onClick (SpaceSelected index)
@@ -859,3 +827,34 @@ buttonPressed bool =
     bool
         |> boolToAttribute
         |> Html.Attributes.attribute "aria-pressed"
+
+
+
+-- HELPERS
+
+
+to2d : Int -> Int -> ( Int, Int )
+to2d size index =
+    ( index |> modBy size
+    , index // size
+    )
+
+
+from2d : Int -> ( Int, Int ) -> Int
+from2d size ( x, y ) =
+    y * size + x
+
+
+adjacentIndices : Int -> Int -> List Int
+adjacentIndices size index =
+    let
+        ( x, y ) =
+            to2d size index
+    in
+    [ ( x - 1, y )
+    , ( x + 1, y )
+    , ( x, y - 1 )
+    , ( x, y + 1 )
+    ]
+        |> List.filter (\( x_, y_ ) -> x_ >= 0 && x_ < size && y_ >= 0 && y_ < size)
+        |> List.map (from2d size)

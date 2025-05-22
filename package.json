@@ -4,7 +4,7 @@
     "description": "A fun project built with Elm.",
     "scripts": {
         "dev": "run-pty run-pty.json",
-        "dev:elm": "elm-watch hot",
+        "dev:elm": "lamdera live",
         "dev:css": "css-in-elm watch public/styles.css src/Css.elm",
         "dev:review": "elm-review --watch --fix"
     },
@@ -15,7 +15,6 @@
         "elm": "0.19.1-6",
         "elm-format": "0.8.7",
         "elm-review": "2.13.2",
-        "elm-watch": "2.0.0-beta.6",
         "run-pty": "5.0.0"
     }
 }
