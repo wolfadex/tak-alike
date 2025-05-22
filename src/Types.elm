@@ -34,6 +34,7 @@ type AsyncResult e a
 
 type alias GameModel =
     { self : Player
+    , opponent : ConnectionStatus
     , code : String
     , game : Game
     }
@@ -183,23 +184,29 @@ type GameMsg
 
 
 type ToBackend
-    = NoOpToBackend
-    | TB_JoinPublicMatch
+    = TB_JoinPublicMatch
     | TB_HostPrivateMatch
     | TB_JoinMatch String
     | TB_GameMessage String GameMsg
 
 
 type BackendMsg
-    = NoOpBackendMsg
-    | SeedGenerated Random.Seed
+    = SeedGenerated Random.Seed
+    | DeviceConnected Lamdera.SessionId Lamdera.ClientId
+    | DeviceDisconnected Lamdera.SessionId Lamdera.ClientId
 
 
 type ToFrontend
-    = NoOpToFrontend
-    | TF_MatchNotFound
-    | TF_MatchJoined String Player Game
+    = TF_MatchNotFound
+    | TF_MatchJoined String Player ConnectionStatus Game
     | TF_SetGameSize Int
+    | TF_SetOpponentConnectionStatus ConnectionStatus
+
+
+type ConnectionStatus
+    = AwaitingOpponent
+    | OpponentConnected
+    | OpponentDisconnected
 
 
 

@@ -301,9 +301,6 @@ updateGame msg gameModel =
 updateFromBackend : ToFrontend -> FrontendModel -> ( FrontendModel, Cmd FrontendMsg )
 updateFromBackend msg model =
     case msg of
-        NoOpToFrontend ->
-            ( model, Cmd.none )
-
         TF_MatchNotFound ->
             case model.page of
                 MenuPage menu ->
@@ -312,10 +309,28 @@ updateFromBackend msg model =
                 GamePage _ ->
                     ( model, Cmd.none )
 
-        TF_MatchJoined code player game ->
-            ( { model | page = GamePage (Success { game = game, code = code, self = player }) }
+        TF_MatchJoined code player opponent game ->
+            ( { model
+                | page =
+                    GamePage
+                        (Success
+                            { game = game
+                            , code = code
+                            , self = player
+                            , opponent = opponent
+                            }
+                        )
+              }
             , Browser.Navigation.pushUrl model.key ("/game/" ++ code)
             )
+
+        TF_SetOpponentConnectionStatus opponent ->
+            case model.page of
+                GamePage (Success gameModel) ->
+                    ( { model | page = GamePage (Success { gameModel | opponent = opponent }) }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         TF_SetGameSize size ->
             case model.page of
@@ -493,26 +508,42 @@ viewGame gameRes =
         Failure error ->
             [ Html.text error ]
 
-        Success { game, self } ->
+        Success { game, opponent, self } ->
             case game of
                 NewGame newGame ->
                     viewGameCommon
-                        [ viewNewGame newGame.size ]
+                        [ viewNewGame newGame.size
+                        , viewOpponent opponent
+                        ]
 
                 CompletedGame completedGame ->
                     viewGameCommon
                         (viewNewGame completedGame.size
+                            :: viewOpponent opponent
                             :: viewGameState self (Just completedGame.winner) completedGame.state
                         )
 
                 PlayingGame playingGame ->
                     viewGameCommon
-                        (viewGameState self Nothing playingGame)
+                        (viewOpponent opponent :: viewGameState self Nothing playingGame)
 
 
 viewGameCommon : List (Html GameMsg) -> List (Html GameMsg)
 viewGameCommon children =
     Html.h1 [] [ Html.text "Tak-Alike" ] :: children
+
+
+viewOpponent : ConnectionStatus -> Html GameMsg
+viewOpponent opponent =
+    case opponent of
+        AwaitingOpponent ->
+            Html.h2 [] [ Html.span [] [ Html.text "⏳ Awaiting an opponent" ] ]
+
+        OpponentDisconnected ->
+            Html.h2 [] [ Html.span [] [ Html.text "⚠️ Opponent has left the game" ] ]
+
+        OpponentConnected ->
+            Html.text ""
 
 
 viewNewGame : Int -> Html GameMsg

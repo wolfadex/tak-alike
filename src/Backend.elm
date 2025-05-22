@@ -12,7 +12,7 @@ app =
         { init = init
         , update = update
         , updateFromFrontend = updateFromFrontend
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -26,22 +26,199 @@ init =
     )
 
 
+subscriptions : BackendModel -> Sub BackendMsg
+subscriptions _ =
+    Sub.batch
+        [ Lamdera.onConnect DeviceConnected
+        , Lamdera.onDisconnect DeviceDisconnected
+        ]
+
+
 update : BackendMsg -> BackendModel -> ( BackendModel, Cmd BackendMsg )
 update msg model =
     case msg of
-        NoOpBackendMsg ->
-            ( model, Cmd.none )
-
         SeedGenerated seed ->
             ( { model | seed = seed }, Cmd.none )
+
+        DeviceConnected sessionId _ ->
+            ( { model
+                | matches =
+                    Dict.map
+                        (\_ match ->
+                            { match
+                                | white =
+                                    case match.white of
+                                        Disconnected details ->
+                                            if details.device == sessionId then
+                                                Connected details
+
+                                            else
+                                                match.white
+
+                                        _ ->
+                                            match.white
+                                , black =
+                                    case match.black of
+                                        Disconnected details ->
+                                            if details.device == sessionId then
+                                                Connected details
+
+                                            else
+                                                match.black
+
+                                        _ ->
+                                            match.black
+                            }
+                        )
+                        model.matches
+              }
+            , case findOtherDevice sessionId model.matches |> Debug.log "connected" of
+                Nothing ->
+                    Cmd.none
+
+                Just otherSessionId ->
+                    Lamdera.sendToFrontend otherSessionId (TF_SetOpponentConnectionStatus OpponentConnected)
+            )
+
+        DeviceDisconnected sessionId _ ->
+            ( { model
+                | matches =
+                    Dict.map
+                        (\_ match ->
+                            { match
+                                | white =
+                                    case match.white of
+                                        Connected details ->
+                                            if details.device == sessionId then
+                                                Disconnected details
+
+                                            else
+                                                match.white
+
+                                        _ ->
+                                            match.white
+                                , black =
+                                    case match.black of
+                                        Connected details ->
+                                            if details.device == sessionId then
+                                                Disconnected details
+
+                                            else
+                                                match.black
+
+                                        _ ->
+                                            match.black
+                            }
+                        )
+                        model.matches
+              }
+            , case findOtherDevice sessionId model.matches |> Debug.log "disconnected" of
+                Nothing ->
+                    Cmd.none
+
+                Just otherSessionId ->
+                    Lamdera.sendToFrontend otherSessionId (TF_SetOpponentConnectionStatus OpponentDisconnected)
+            )
+
+
+findOtherDevice : SessionId -> Dict String Match -> Maybe SessionId
+findOtherDevice sessionId matches =
+    findOtherDeviceHelper sessionId (Dict.toList matches)
+
+
+findOtherDeviceHelper : SessionId -> List ( String, Match ) -> Maybe SessionId
+findOtherDeviceHelper sessionId matches =
+    case matches of
+        [] ->
+            Nothing
+
+        ( _, match ) :: rest ->
+            case match.white of
+                Connected whiteDetails ->
+                    if whiteDetails.device == sessionId then
+                        case match.black of
+                            Connected blackDetails ->
+                                Just blackDetails.device
+
+                            Disconnected _ ->
+                                Nothing
+
+                            WaitingFor ->
+                                Nothing
+
+                    else
+                        case match.black of
+                            Connected blackDetails ->
+                                if blackDetails.device == sessionId then
+                                    Just whiteDetails.device
+
+                                else
+                                    Nothing
+
+                            Disconnected blackDetails ->
+                                if blackDetails.device == sessionId then
+                                    Just whiteDetails.device
+
+                                else
+                                    Nothing
+
+                            WaitingFor ->
+                                Nothing
+
+                Disconnected whiteDetails ->
+                    if whiteDetails.device == sessionId then
+                        case match.black of
+                            Connected blackDetails ->
+                                Just blackDetails.device
+
+                            Disconnected _ ->
+                                Nothing
+
+                            WaitingFor ->
+                                Nothing
+
+                    else
+                        case match.black of
+                            Connected blackDetails ->
+                                if blackDetails.device == sessionId then
+                                    Just whiteDetails.device
+
+                                else
+                                    Nothing
+
+                            Disconnected blackDetails ->
+                                if blackDetails.device == sessionId then
+                                    Just whiteDetails.device
+
+                                else
+                                    Nothing
+
+                            WaitingFor ->
+                                Nothing
+
+                WaitingFor ->
+                    case match.black of
+                        Connected blackDetails ->
+                            if blackDetails.device == sessionId then
+                                Nothing
+
+                            else
+                                findOtherDeviceHelper sessionId rest
+
+                        Disconnected blackDetails ->
+                            if blackDetails.device == sessionId then
+                                Nothing
+
+                            else
+                                findOtherDeviceHelper sessionId rest
+
+                        WaitingFor ->
+                            findOtherDeviceHelper sessionId rest
 
 
 updateFromFrontend : SessionId -> ClientId -> ToBackend -> BackendModel -> ( BackendModel, Cmd BackendMsg )
 updateFromFrontend sessionId _ msg model =
     case msg of
-        NoOpToBackend ->
-            ( model, Cmd.none )
-
         TB_JoinPublicMatch ->
             case findOpenMatch model.matches of
                 Nothing ->
@@ -60,7 +237,7 @@ updateFromFrontend sessionId _ msg model =
                                 }
                                 model.matches
                       }
-                    , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White game)
+                    , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White AwaitingOpponent game)
                     )
 
                 Just ( code, match ) ->
@@ -70,7 +247,21 @@ updateFromFrontend sessionId _ msg model =
                                 { match | black = Connected { device = sessionId } }
                                 model.matches
                       }
-                    , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
+                    , Lamdera.sendToFrontend sessionId
+                        (TF_MatchJoined code
+                            Black
+                            (case match.white of
+                                WaitingFor ->
+                                    AwaitingOpponent
+
+                                Connected _ ->
+                                    OpponentConnected
+
+                                Disconnected _ ->
+                                    OpponentDisconnected
+                            )
+                            match.game
+                        )
                     )
 
         TB_HostPrivateMatch ->
@@ -89,7 +280,7 @@ updateFromFrontend sessionId _ msg model =
                         }
                         model.matches
               }
-            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White game)
+            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White AwaitingOpponent game)
             )
 
         TB_JoinMatch code ->
@@ -103,7 +294,21 @@ updateFromFrontend sessionId _ msg model =
                             ( { model
                                 | matches = Dict.insert code { match | black = Connected { device = sessionId } } model.matches
                               }
-                            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
+                            , Lamdera.sendToFrontend sessionId
+                                (TF_MatchJoined code
+                                    Black
+                                    (case match.white of
+                                        WaitingFor ->
+                                            AwaitingOpponent
+
+                                        Connected _ ->
+                                            OpponentConnected
+
+                                        Disconnected _ ->
+                                            OpponentDisconnected
+                                    )
+                                    match.game
+                                )
                             )
 
                         Disconnected blackDetails ->
@@ -111,7 +316,21 @@ updateFromFrontend sessionId _ msg model =
                                 ( { model
                                     | matches = Dict.insert code { match | black = Connected { device = sessionId } } model.matches
                                   }
-                                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
+                                , Lamdera.sendToFrontend sessionId
+                                    (TF_MatchJoined code
+                                        Black
+                                        (case match.white of
+                                            WaitingFor ->
+                                                AwaitingOpponent
+
+                                            Connected _ ->
+                                                OpponentConnected
+
+                                            Disconnected _ ->
+                                                OpponentDisconnected
+                                        )
+                                        match.game
+                                    )
                                 )
 
                             else
@@ -120,14 +339,42 @@ updateFromFrontend sessionId _ msg model =
                                         ( { model
                                             | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
                                           }
-                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        , Lamdera.sendToFrontend sessionId
+                                            (TF_MatchJoined code
+                                                White
+                                                (case match.black of
+                                                    WaitingFor ->
+                                                        AwaitingOpponent
+
+                                                    Connected _ ->
+                                                        OpponentConnected
+
+                                                    Disconnected _ ->
+                                                        OpponentDisconnected
+                                                )
+                                                match.game
+                                            )
                                         )
 
                                     Disconnected _ ->
                                         ( { model
                                             | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
                                           }
-                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        , Lamdera.sendToFrontend sessionId
+                                            (TF_MatchJoined code
+                                                White
+                                                (case match.black of
+                                                    WaitingFor ->
+                                                        AwaitingOpponent
+
+                                                    Connected _ ->
+                                                        OpponentConnected
+
+                                                    Disconnected _ ->
+                                                        OpponentDisconnected
+                                                )
+                                                match.game
+                                            )
                                         )
 
                                     Connected whiteDetails ->
@@ -135,7 +382,21 @@ updateFromFrontend sessionId _ msg model =
                                             ( { model
                                                 | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
                                               }
-                                            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                            , Lamdera.sendToFrontend sessionId
+                                                (TF_MatchJoined code
+                                                    White
+                                                    (case match.black of
+                                                        WaitingFor ->
+                                                            AwaitingOpponent
+
+                                                        Connected _ ->
+                                                            OpponentConnected
+
+                                                        Disconnected _ ->
+                                                            OpponentDisconnected
+                                                    )
+                                                    match.game
+                                                )
                                             )
 
                                         else
@@ -146,7 +407,21 @@ updateFromFrontend sessionId _ msg model =
                                 ( { model
                                     | matches = Dict.insert code { match | black = Connected { device = sessionId } } model.matches
                                   }
-                                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
+                                , Lamdera.sendToFrontend sessionId
+                                    (TF_MatchJoined code
+                                        Black
+                                        (case match.white of
+                                            WaitingFor ->
+                                                AwaitingOpponent
+
+                                            Connected _ ->
+                                                OpponentConnected
+
+                                            Disconnected _ ->
+                                                OpponentDisconnected
+                                        )
+                                        match.game
+                                    )
                                 )
 
                             else
@@ -155,14 +430,42 @@ updateFromFrontend sessionId _ msg model =
                                         ( { model
                                             | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
                                           }
-                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        , Lamdera.sendToFrontend sessionId
+                                            (TF_MatchJoined code
+                                                White
+                                                (case match.black of
+                                                    WaitingFor ->
+                                                        AwaitingOpponent
+
+                                                    Connected _ ->
+                                                        OpponentConnected
+
+                                                    Disconnected _ ->
+                                                        OpponentDisconnected
+                                                )
+                                                match.game
+                                            )
                                         )
 
                                     Disconnected _ ->
                                         ( { model
                                             | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
                                           }
-                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        , Lamdera.sendToFrontend sessionId
+                                            (TF_MatchJoined code
+                                                White
+                                                (case match.black of
+                                                    WaitingFor ->
+                                                        AwaitingOpponent
+
+                                                    Connected _ ->
+                                                        OpponentConnected
+
+                                                    Disconnected _ ->
+                                                        OpponentDisconnected
+                                                )
+                                                match.game
+                                            )
                                         )
 
                                     Connected whiteDetails ->
@@ -170,7 +473,21 @@ updateFromFrontend sessionId _ msg model =
                                             ( { model
                                                 | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
                                               }
-                                            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                            , Lamdera.sendToFrontend sessionId
+                                                (TF_MatchJoined code
+                                                    White
+                                                    (case match.black of
+                                                        WaitingFor ->
+                                                            AwaitingOpponent
+
+                                                        Connected _ ->
+                                                            OpponentConnected
+
+                                                        Disconnected _ ->
+                                                            OpponentDisconnected
+                                                    )
+                                                    match.game
+                                                )
                                             )
 
                                         else
@@ -215,7 +532,7 @@ updateGame ( activePlayerColor, activePlayerSession, otherPlayerSession ) code g
                     Cmd.none
 
                 Just ( otherPlayer, sessionId ) ->
-                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer game)
+                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected game)
             )
 
         SetGameSize size ->
@@ -329,7 +646,7 @@ updateGame ( activePlayerColor, activePlayerSession, otherPlayerSession ) code g
                                                                     Cmd.none
 
                                                                 Just ( otherPlayer, sessionId ) ->
-                                                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected (PlayingGame nextGame))
                                                             )
 
                                                         (( Stone, _ ) :: _) as destinationStack ->
@@ -356,7 +673,7 @@ updateGame ( activePlayerColor, activePlayerSession, otherPlayerSession ) code g
                                                                     Cmd.none
 
                                                                 Just ( otherPlayer, sessionId ) ->
-                                                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected (PlayingGame nextGame))
                                                             )
 
                                                         ( Wall, plr ) :: destinationStack ->
@@ -384,7 +701,7 @@ updateGame ( activePlayerColor, activePlayerSession, otherPlayerSession ) code g
                                                                         Cmd.none
 
                                                                     Just ( otherPlayer, sessionId ) ->
-                                                                        Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                                                        Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected (PlayingGame nextGame))
                                                                 )
 
                                                             else
@@ -436,7 +753,7 @@ updateGame ( activePlayerColor, activePlayerSession, otherPlayerSession ) code g
                                     Cmd.none
 
                                 Just ( otherPlayer, sessionId ) ->
-                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer gameWon)
+                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected gameWon)
                             )
 
 
@@ -502,7 +819,7 @@ updateNoPieceSelected otherPlayerSession code activePlayerColor index game =
                                 Cmd.none
 
                             Just ( otherPlayer, sessionId ) ->
-                                Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected (PlayingGame nextGame))
                         )
 
                     ( _, 0, _ ) ->
@@ -533,7 +850,7 @@ updateNoPieceSelected otherPlayerSession code activePlayerColor index game =
                                 Cmd.none
 
                             Just ( otherPlayer, sessionId ) ->
-                                Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer OpponentConnected (PlayingGame nextGame))
                         )
 
             else
