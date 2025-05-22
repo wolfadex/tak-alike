@@ -9,6 +9,7 @@ import Html exposing (Html)
 import Html.Attributes
 import Html.Events
 import Lamdera
+import Time
 import Types exposing (..)
 import Url exposing (Url)
 
@@ -61,10 +62,22 @@ urlToPage url =
             GamePage (Loading code)
 
         [ "admin" ] ->
-            Admin_Page { matches = Failure "Invalid passowrd", password = "" }
+            Admin_Page
+                { matches = Failure "Invalid passowrd"
+                , password = ""
+                , matchSort = Nothing
+                , privacyFilter = Nothing
+                , gameStateFilter = Nothing
+                }
 
         [ "admin", password ] ->
-            Admin_Page { matches = Loading "Gathering matches", password = password }
+            Admin_Page
+                { matches = Loading "Gathering matches"
+                , password = password
+                , matchSort = Nothing
+                , privacyFilter = Nothing
+                , gameStateFilter = Nothing
+                }
 
         _ ->
             MenuPage { code = "", loading = Untouched }
@@ -153,6 +166,42 @@ updateAdmin msg model =
 
         Admin_DeleteMatch code ->
             ( model, Lamdera.sendToBackend (TB_Admin_DelteMatch code) )
+
+        Admin_SetMatchSort matchSort ->
+            ( { model
+                | matchSort = matchSort
+                , matches =
+                    case model.matches of
+                        Success matches ->
+                            case matchSort of
+                                Nothing ->
+                                    model.matches
+
+                                Just CreateAsc ->
+                                    Success (List.sortBy (Tuple.second >> .createdAt >> Time.posixToMillis) matches)
+
+                                Just CreateDesc ->
+                                    Success (List.sortBy (Tuple.second >> .createdAt >> Time.posixToMillis) matches |> List.reverse)
+
+                                Just UpdateAsc ->
+                                    Success (List.sortBy (Tuple.second >> .updatedAt >> Time.posixToMillis) matches)
+
+                                Just UpdateDesc ->
+                                    Success (List.sortBy (Tuple.second >> .updatedAt >> Time.posixToMillis) matches |> List.reverse)
+
+                        _ ->
+                            model.matches
+              }
+            , Cmd.none
+            )
+
+        Admin_SetPrivacyFilter privacyFilter ->
+            ( { model | privacyFilter = privacyFilter }
+            , Cmd.none
+            )
+
+        Admin_SetGameStateFilter gameStateFilter ->
+            ( { model | gameStateFilter = gameStateFilter }, Cmd.none )
 
 
 updateMenu : MenuMsg -> Menu -> ( Menu, Cmd FrontendMsg )
@@ -399,7 +448,18 @@ updateFromBackend msg model =
                     ( model, Cmd.none )
 
         TF_Admin_ShowAdminDashboard matches ->
-            ( { model | page = Admin_Page { matches = Success matches, password = "" } }, Cmd.none )
+            ( { model
+                | page =
+                    Admin_Page
+                        { matches = Success matches
+                        , password = ""
+                        , matchSort = Nothing
+                        , privacyFilter = Nothing
+                        , gameStateFilter = Nothing
+                        }
+              }
+            , Cmd.none
+            )
 
         TF_Admin_Matches matches ->
             case model.page of
@@ -1001,24 +1061,187 @@ viewAdmin model =
                     []
                     [ Html.tr []
                         [ Html.th []
-                            [ Html.text "Privacy" ]
+                            [ Html.button
+                                [ Css.columnWithAction
+                                , Html.Events.onClick
+                                    (Admin_SetPrivacyFilter
+                                        (case model.privacyFilter of
+                                            Nothing ->
+                                                Just OnlyPublic
+
+                                            Just OnlyPublic ->
+                                                Just OnlyPrivate
+
+                                            Just OnlyPrivate ->
+                                                Nothing
+                                        )
+                                    )
+                                ]
+                                [ Html.span [] [ Html.text "Privacy" ]
+                                , Html.text <|
+                                    case model.privacyFilter of
+                                        Nothing ->
+                                            "_"
+
+                                        Just OnlyPublic ->
+                                            "✅"
+
+                                        Just OnlyPrivate ->
+                                            "🤫"
+                                ]
+                            ]
                         , Html.th
                             []
-                            [ Html.text "Game state" ]
+                            [ Html.button
+                                [ Css.columnWithAction
+                                , Html.Events.onClick
+                                    (Admin_SetGameStateFilter
+                                        (case model.gameStateFilter of
+                                            Nothing ->
+                                                Just OnlyNewGames
+
+                                            Just OnlyNewGames ->
+                                                Just OnlyPlayingGames
+
+                                            Just OnlyPlayingGames ->
+                                                Just OnlyCompltedGames
+
+                                            Just OnlyCompltedGames ->
+                                                Nothing
+                                        )
+                                    )
+                                ]
+                                [ Html.span [] [ Html.text "Game state" ]
+                                , Html.text <|
+                                    case model.gameStateFilter of
+                                        Nothing ->
+                                            "_"
+
+                                        Just OnlyNewGames ->
+                                            "🆕"
+
+                                        Just OnlyPlayingGames ->
+                                            "🧩"
+
+                                        Just OnlyCompltedGames ->
+                                            "🏆"
+                                ]
+                            ]
                         , Html.th
                             []
                             [ Html.text "White status" ]
                         , Html.th
                             []
                             [ Html.text "Black status" ]
+                        , Html.th
+                            []
+                            [ Html.button
+                                [ Css.columnWithAction
+                                , Html.Events.onClick
+                                    (Admin_SetMatchSort
+                                        (Just <|
+                                            case model.matchSort of
+                                                Just CreateAsc ->
+                                                    CreateDesc
 
-                        -- , Html.th
-                        --     []
-                        --     [ Html.text "Black status" ]
+                                                _ ->
+                                                    CreateAsc
+                                        )
+                                    )
+                                ]
+                                [ Html.span [] [ Html.text "Created at" ]
+                                , Html.text <|
+                                    case model.matchSort of
+                                        Just CreateAsc ->
+                                            "⬆️"
+
+                                        Just CreateDesc ->
+                                            "⬇️"
+
+                                        _ ->
+                                            "↕️"
+                                ]
+                            ]
+                        , Html.th
+                            []
+                            [ Html.button
+                                [ Css.columnWithAction
+                                , Html.Events.onClick
+                                    (Admin_SetMatchSort
+                                        (Just <|
+                                            case model.matchSort of
+                                                Just UpdateAsc ->
+                                                    UpdateDesc
+
+                                                _ ->
+                                                    UpdateAsc
+                                        )
+                                    )
+                                ]
+                                [ Html.span [] [ Html.text "Updated at" ]
+                                , Html.text <|
+                                    case model.matchSort of
+                                        Just UpdateAsc ->
+                                            "⬆️"
+
+                                        Just UpdateDesc ->
+                                            "⬇️"
+
+                                        _ ->
+                                            "↕️"
+                                ]
+                            ]
+                        , Html.th
+                            []
+                            []
                         ]
                     ]
                 , matches
-                    |> Dict.toList
+                    |> List.filter
+                        (\( _, match ) ->
+                            let
+                                visiblePrivacy =
+                                    case model.privacyFilter of
+                                        Nothing ->
+                                            True
+
+                                        Just OnlyPublic ->
+                                            match.privacy == Public
+
+                                        Just OnlyPrivate ->
+                                            match.privacy == Private
+
+                                visibleGameState =
+                                    case model.gameStateFilter of
+                                        Nothing ->
+                                            True
+
+                                        Just OnlyNewGames ->
+                                            case match.game of
+                                                NewGame _ ->
+                                                    True
+
+                                                _ ->
+                                                    False
+
+                                        Just OnlyPlayingGames ->
+                                            case match.game of
+                                                PlayingGame _ ->
+                                                    True
+
+                                                _ ->
+                                                    False
+
+                                        Just OnlyCompltedGames ->
+                                            case match.game of
+                                                CompletedGame _ ->
+                                                    True
+
+                                                _ ->
+                                                    False
+                            in
+                            visiblePrivacy && visibleGameState
+                        )
                     |> List.map
                         (\( code, match ) ->
                             Html.tr []
@@ -1084,6 +1307,14 @@ viewAdmin model =
                                                 "Disconnected"
                                     ]
                                 , Html.td []
+                                    [ Html.text <|
+                                        formatDateTime match.createdAt
+                                    ]
+                                , Html.td []
+                                    [ Html.text <|
+                                        formatDateTime match.updatedAt
+                                    ]
+                                , Html.td []
                                     [ Html.button
                                         [ Html.Events.onClick (Admin_DeleteMatch code) ]
                                         [ Html.text "Delete match" ]
@@ -1093,3 +1324,85 @@ viewAdmin model =
                     |> Html.tbody []
                 ]
     ]
+
+
+formatDateTime : Time.Posix -> String
+formatDateTime time =
+    let
+        year =
+            time
+                |> Time.toYear Time.utc
+                |> String.fromInt
+
+        month =
+            time
+                |> Time.toMonth Time.utc
+                |> monthToInt
+                |> String.fromInt
+                |> String.padLeft 2 '0'
+
+        day =
+            time
+                |> Time.toDay Time.utc
+                |> String.fromInt
+                |> String.padLeft 2 '0'
+
+        hour =
+            time
+                |> Time.toHour Time.utc
+                |> String.fromInt
+                |> String.padLeft 2 '0'
+
+        min =
+            time
+                |> Time.toMinute Time.utc
+                |> String.fromInt
+                |> String.padLeft 2 '0'
+
+        sec =
+            time
+                |> Time.toSecond Time.utc
+                |> String.fromInt
+                |> String.padLeft 2 '0'
+    in
+    year ++ "-" ++ month ++ "-" ++ day ++ "T" ++ hour ++ ":" ++ min ++ ":" ++ sec
+
+
+monthToInt : Time.Month -> Int
+monthToInt month =
+    case month of
+        Time.Jan ->
+            1
+
+        Time.Feb ->
+            2
+
+        Time.Mar ->
+            3
+
+        Time.Apr ->
+            4
+
+        Time.May ->
+            5
+
+        Time.Jun ->
+            6
+
+        Time.Jul ->
+            7
+
+        Time.Aug ->
+            8
+
+        Time.Sep ->
+            9
+
+        Time.Oct ->
+            10
+
+        Time.Nov ->
+            11
+
+        Time.Dec ->
+            12

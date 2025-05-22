@@ -5,6 +5,7 @@ import Browser.Navigation exposing (Key)
 import Dict exposing (Dict)
 import Lamdera
 import Random
+import Time
 import Url exposing (Url)
 
 
@@ -21,9 +22,30 @@ type Page
 
 
 type alias Admin_Model =
-    { matches : AsyncResult String (Dict String Admin_Match)
+    { matches : AsyncResult String (List ( String, Admin_Match ))
     , password : String
+    , matchSort : Maybe MatchSort
+    , privacyFilter : Maybe PrivacyFilter
+    , gameStateFilter : Maybe GameStateFilter
     }
+
+
+type MatchSort
+    = CreateAsc
+    | CreateDesc
+    | UpdateAsc
+    | UpdateDesc
+
+
+type PrivacyFilter
+    = OnlyPublic
+    | OnlyPrivate
+
+
+type GameStateFilter
+    = OnlyNewGames
+    | OnlyPlayingGames
+    | OnlyCompltedGames
 
 
 type alias Menu =
@@ -160,6 +182,8 @@ type alias Match =
     , game : Game
     , white : Client
     , black : Client
+    , createdAt : Time.Posix
+    , updatedAt : Time.Posix
     }
 
 
@@ -168,6 +192,8 @@ type alias Admin_Match =
     , game : Game
     , white : Admin_Client
     , black : Admin_Client
+    , createdAt : Time.Posix
+    , updatedAt : Time.Posix
     }
 
 
@@ -211,6 +237,9 @@ type Admin_Msg
     | Admin_PasswordChanged String
     | Admin_Authenticate
     | Admin_DeleteMatch String
+    | Admin_SetMatchSort (Maybe MatchSort)
+    | Admin_SetPrivacyFilter (Maybe PrivacyFilter)
+    | Admin_SetGameStateFilter (Maybe GameStateFilter)
 
 
 type ToBackend
@@ -226,6 +255,7 @@ type BackendMsg
     = SeedGenerated Random.Seed
     | DeviceConnected Lamdera.SessionId Lamdera.ClientId
     | DeviceDisconnected Lamdera.SessionId Lamdera.ClientId
+    | ToBackendWithTime Time.Posix Lamdera.SessionId Lamdera.ClientId ToBackend
 
 
 type ToFrontend
@@ -233,8 +263,8 @@ type ToFrontend
     | TF_MatchJoined String Player ConnectionStatus Game
     | TF_SetGameSize Int
     | TF_SetOpponentConnectionStatus ConnectionStatus
-    | TF_Admin_ShowAdminDashboard (Dict String Admin_Match)
-    | TF_Admin_Matches (Dict String Admin_Match)
+    | TF_Admin_ShowAdminDashboard (List ( String, Admin_Match ))
+    | TF_Admin_Matches (List ( String, Admin_Match ))
 
 
 type ConnectionStatus
