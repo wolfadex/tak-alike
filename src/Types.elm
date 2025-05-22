@@ -39,7 +39,13 @@ type alias GameModel =
     }
 
 
-type alias Game =
+type Game
+    = NewGame { size : Int }
+    | PlayingGame GameState
+    | CompletedGame { winner : ( Player, List Int ), size : Int, state : GameState }
+
+
+type alias GameState =
     { board : Board
     , size : Int
     , turn : Player
@@ -50,15 +56,11 @@ type alias Game =
     , stoneCountBlack : Int
     , capstoneCountWhite : Int
     , capstoneCountBlack : Int
-    , winner : Maybe ( Player, List Int )
     , stackSizeSelected : Int
-
-    --
-    , newGameSize : Int
     }
 
 
-initGame : Int -> Game
+initGame : Int -> GameState
 initGame size =
     let
         stoneCount : Int
@@ -114,9 +116,7 @@ initGame size =
     , stoneCountBlack = stoneCount
     , capstoneCountWhite = capstoneCount
     , capstoneCountBlack = capstoneCount
-    , winner = Nothing
     , stackSizeSelected = 1
-    , newGameSize = size
     }
 
 
@@ -136,14 +136,19 @@ type Player
 
 
 type alias BackendModel =
-    { publicMatches : Dict String Match
-    , privateMatches : Dict String Match
+    { matches : Dict String Match
     , seed : Random.Seed
     }
 
 
+type Privacy
+    = Public
+    | Private
+
+
 type alias Match =
-    { game : Game
+    { privacy : Privacy
+    , game : Game
     , white : Client
     , black : Client
     }
@@ -170,7 +175,7 @@ type MenuMsg
 
 
 type GameMsg
-    = NewGame
+    = CreateNewGame Int
     | SetGameSize Int
     | SpaceSelected Int
     | SetSelectedPiece Piece
@@ -181,7 +186,6 @@ type ToBackend
     = NoOpToBackend
     | TB_JoinPublicMatch
     | TB_HostPrivateMatch
-    | TB_JoinPrivateMatch String
     | TB_JoinMatch String
     | TB_GameMessage String GameMsg
 
@@ -193,5 +197,158 @@ type BackendMsg
 
 type ToFrontend
     = NoOpToFrontend
-    | TF_PrivateMatchNotFound
+    | TF_MatchNotFound
     | TF_MatchJoined String Player Game
+    | TF_SetGameSize Int
+
+
+
+-- COMMON CODE
+
+
+boardGet : Int -> Board -> List ( Piece, Player )
+boardGet index board =
+    board
+        |> Dict.get index
+        |> Maybe.withDefault []
+
+
+boardInsert : Int -> List ( Piece, Player ) -> Board -> Board
+boardInsert index pp board =
+    Dict.insert index pp board
+
+
+boardRemove : Int -> Board -> Board
+boardRemove index board =
+    Dict.insert index [] board
+
+
+checkWinCondition : Int -> Board -> Maybe ( Player, List Int )
+checkWinCondition size board =
+    let
+        xStart : List Int
+        xStart =
+            List.range 0 (size - 1)
+                |> List.map
+                    (\x ->
+                        from2d size ( x, 0 )
+                    )
+
+        xEnd : List Int
+        xEnd =
+            List.range 0 (size - 1)
+                |> List.map
+                    (\x ->
+                        from2d size ( x, size - 1 )
+                    )
+    in
+    case checkWinConditionHelper size board xStart xEnd of
+        Just w ->
+            Just w
+
+        Nothing ->
+            let
+                yStart : List Int
+                yStart =
+                    List.range 0 (size - 1)
+                        |> List.map
+                            (\y ->
+                                from2d size ( 0, y )
+                            )
+
+                yEnd : List Int
+                yEnd =
+                    List.range 0 (size - 1)
+                        |> List.map
+                            (\y ->
+                                from2d size ( size - 1, y )
+                            )
+            in
+            checkWinConditionHelper size board yStart yEnd
+
+
+checkWinConditionHelper : Int -> Board -> List Int -> List Int -> Maybe ( Player, List Int )
+checkWinConditionHelper size board start end =
+    case start of
+        [] ->
+            Nothing
+
+        next :: rest ->
+            case boardGet next board of
+                [] ->
+                    checkWinConditionHelper size board rest end
+
+                ( piece, player ) :: _ ->
+                    if piece == Stone || piece == Capstone then
+                        case floodFill size board next player of
+                            [] ->
+                                checkWinConditionHelper size board rest end
+
+                            indicies ->
+                                if List.any (\e -> List.member e indicies) end then
+                                    Just ( player, indicies )
+
+                                else
+                                    checkWinConditionHelper size board rest end
+
+                    else
+                        checkWinConditionHelper size board rest end
+
+
+floodFill : Int -> Board -> Int -> Player -> List Int
+floodFill size board start player =
+    floodFillHelper size board start player [ start ]
+
+
+floodFillHelper : Int -> Board -> Int -> Player -> List Int -> List Int
+floodFillHelper size board start player collected =
+    start
+        |> adjacentIndices size
+        |> List.foldl
+            (\idx coll ->
+                if List.member idx coll then
+                    coll
+
+                else
+                    case boardGet idx board of
+                        [] ->
+                            coll
+
+                        ( Wall, _ ) :: _ ->
+                            coll
+
+                        ( _, plr ) :: _ ->
+                            if plr == player then
+                                floodFillHelper size board idx player (idx :: coll)
+
+                            else
+                                coll
+            )
+            collected
+
+
+to2d : Int -> Int -> ( Int, Int )
+to2d size index =
+    ( index |> modBy size
+    , index // size
+    )
+
+
+from2d : Int -> ( Int, Int ) -> Int
+from2d size ( x, y ) =
+    y * size + x
+
+
+adjacentIndices : Int -> Int -> List Int
+adjacentIndices size index =
+    let
+        ( x, y ) =
+            to2d size index
+    in
+    [ ( x - 1, y )
+    , ( x + 1, y )
+    , ( x, y - 1 )
+    , ( x, y + 1 )
+    ]
+        |> List.filter (\( x_, y_ ) -> x_ >= 0 && x_ < size && y_ >= 0 && y_ < size)
+        |> List.map (from2d size)

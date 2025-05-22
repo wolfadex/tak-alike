@@ -18,8 +18,7 @@ app =
 
 init : ( BackendModel, Cmd BackendMsg )
 init =
-    ( { publicMatches = Dict.empty
-      , privateMatches = Dict.empty
+    ( { matches = Dict.empty
       , seed = Random.initialSeed 0
       }
     , Random.independentSeed
@@ -44,197 +43,518 @@ updateFromFrontend sessionId _ msg model =
             ( model, Cmd.none )
 
         TB_JoinPublicMatch ->
-            case findOpenMatch model.publicMatches of
+            case findOpenMatch model.matches of
                 Nothing ->
                     let
-                        ( code, seed ) =
-                            Random.step
-                                (Random.List.choices 6 words
-                                    |> Random.map (Tuple.first >> String.join "-")
-                                )
-                                model.seed
-
-                        baseGame =
-                            initGame 3
-
-                        game =
-                            { baseGame | winner = Just ( White, [] ) }
+                        ( ( game, code ), seed ) =
+                            makeNewGame model.seed
                     in
                     ( { model
                         | seed = seed
-                        , publicMatches =
+                        , matches =
                             Dict.insert code
-                                { game = game
+                                { privacy = Public
+                                , game = game
                                 , white = Connected { device = sessionId }
                                 , black = WaitingFor
                                 }
-                                model.publicMatches
+                                model.matches
                       }
                     , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White game)
                     )
 
                 Just ( code, match ) ->
                     ( { model
-                        | publicMatches =
+                        | matches =
                             Dict.insert code
                                 { match | black = Connected { device = sessionId } }
-                                model.publicMatches
+                                model.matches
                       }
                     , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
                     )
 
         TB_HostPrivateMatch ->
             let
-                ( code, seed ) =
-                    Random.step
-                        (Random.List.choices 6 words
-                            |> Random.map (Tuple.first >> String.join "-")
-                        )
-                        model.seed
-
-                baseGame =
-                    initGame 3
-
-                game =
-                    { baseGame | winner = Just ( White, [] ) }
+                ( ( game, code ), seed ) =
+                    makeNewGame model.seed
             in
             ( { model
                 | seed = seed
-                , publicMatches =
+                , matches =
                     Dict.insert code
-                        { game = game
+                        { privacy = Private
+                        , game = game
                         , white = Connected { device = sessionId }
                         , black = WaitingFor
                         }
-                        model.publicMatches
+                        model.matches
               }
             , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White game)
             )
 
         TB_JoinMatch code ->
-            case Dict.get code model.privateMatches of
-                Just match ->
-                    joinPrivateMatch code match sessionId model
-
+            case Dict.get code model.matches of
                 Nothing ->
-                    case Dict.get code model.publicMatches of
-                        Nothing ->
-                            ( model, Lamdera.sendToFrontend sessionId TF_PrivateMatchNotFound )
-
-                        Just match ->
-                            case match.white of
-                                WaitingFor ->
-                                    ( { model
-                                        | publicMatches = Dict.insert code { match | white = Connected { device = sessionId } } model.publicMatches
-                                      }
-                                    , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
-                                    )
-
-                                Disconnected _ ->
-                                    ( { model
-                                        | publicMatches = Dict.insert code { match | white = Connected { device = sessionId } } model.publicMatches
-                                      }
-                                    , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
-                                    )
-
-                                Connected whiteDetails ->
-                                    if whiteDetails.device == sessionId then
-                                        ( { model
-                                            | publicMatches = Dict.insert code { match | white = Connected { device = sessionId } } model.publicMatches
-                                          }
-                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
-                                        )
-
-                                    else
-                                        case match.black of
-                                            WaitingFor ->
-                                                ( { model
-                                                    | publicMatches = Dict.insert code { match | black = Connected { device = sessionId } } model.publicMatches
-                                                  }
-                                                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
-                                                )
-
-                                            Disconnected _ ->
-                                                ( { model
-                                                    | publicMatches = Dict.insert code { match | black = Connected { device = sessionId } } model.publicMatches
-                                                  }
-                                                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
-                                                )
-
-                                            Connected blackDetails ->
-                                                if blackDetails.device == sessionId then
-                                                    ( { model
-                                                        | publicMatches = Dict.insert code { match | black = Connected { device = sessionId } } model.publicMatches
-                                                      }
-                                                    , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
-                                                    )
-
-                                                else
-                                                    ( model, Lamdera.sendToFrontend sessionId TF_PrivateMatchNotFound )
-
-        TB_JoinPrivateMatch code ->
-            case Dict.get code model.privateMatches of
-                Nothing ->
-                    ( model, Lamdera.sendToFrontend sessionId TF_PrivateMatchNotFound )
+                    ( model, Lamdera.sendToFrontend sessionId TF_MatchNotFound )
 
                 Just match ->
-                    joinPrivateMatch code match sessionId model
-
-        TB_GameMessage code gameMsg ->
-            ( model, Cmd.none )
-
-
-joinPrivateMatch : String -> Match -> SessionId -> BackendModel -> ( BackendModel, Cmd BackendMsg )
-joinPrivateMatch code match sessionId model =
-    case match.white of
-        WaitingFor ->
-            ( { model
-                | privateMatches = Dict.insert code { match | white = Connected { device = sessionId } } model.privateMatches
-              }
-            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
-            )
-
-        Disconnected _ ->
-            ( { model
-                | privateMatches = Dict.insert code { match | white = Connected { device = sessionId } } model.privateMatches
-              }
-            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
-            )
-
-        Connected whiteDetails ->
-            if whiteDetails.device == sessionId then
-                ( { model
-                    | privateMatches = Dict.insert code { match | white = Connected { device = sessionId } } model.privateMatches
-                  }
-                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
-                )
-
-            else
-                case match.black of
-                    WaitingFor ->
-                        ( { model
-                            | privateMatches = Dict.insert code { match | black = Connected { device = sessionId } } model.privateMatches
-                          }
-                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
-                        )
-
-                    Disconnected _ ->
-                        ( { model
-                            | privateMatches = Dict.insert code { match | black = Connected { device = sessionId } } model.privateMatches
-                          }
-                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
-                        )
-
-                    Connected blackDetails ->
-                        if blackDetails.device == sessionId then
+                    case match.black of
+                        WaitingFor ->
                             ( { model
-                                | privateMatches = Dict.insert code { match | black = Connected { device = sessionId } } model.privateMatches
+                                | matches = Dict.insert code { match | black = Connected { device = sessionId } } model.matches
                               }
                             , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
                             )
 
-                        else
-                            ( model, Lamdera.sendToFrontend sessionId TF_PrivateMatchNotFound )
+                        Disconnected blackDetails ->
+                            if blackDetails.device == sessionId then
+                                ( { model
+                                    | matches = Dict.insert code { match | black = Connected { device = sessionId } } model.matches
+                                  }
+                                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
+                                )
+
+                            else
+                                case match.white of
+                                    WaitingFor ->
+                                        ( { model
+                                            | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
+                                          }
+                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        )
+
+                                    Disconnected _ ->
+                                        ( { model
+                                            | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
+                                          }
+                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        )
+
+                                    Connected whiteDetails ->
+                                        if whiteDetails.device == sessionId then
+                                            ( { model
+                                                | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
+                                              }
+                                            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                            )
+
+                                        else
+                                            ( model, Lamdera.sendToFrontend sessionId TF_MatchNotFound )
+
+                        Connected blackDetails ->
+                            if blackDetails.device == sessionId then
+                                ( { model
+                                    | matches = Dict.insert code { match | black = Connected { device = sessionId } } model.matches
+                                  }
+                                , Lamdera.sendToFrontend sessionId (TF_MatchJoined code Black match.game)
+                                )
+
+                            else
+                                case match.white of
+                                    WaitingFor ->
+                                        ( { model
+                                            | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
+                                          }
+                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        )
+
+                                    Disconnected _ ->
+                                        ( { model
+                                            | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
+                                          }
+                                        , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                        )
+
+                                    Connected whiteDetails ->
+                                        if whiteDetails.device == sessionId then
+                                            ( { model
+                                                | matches = Dict.insert code { match | white = Connected { device = sessionId } } model.matches
+                                              }
+                                            , Lamdera.sendToFrontend sessionId (TF_MatchJoined code White match.game)
+                                            )
+
+                                        else
+                                            ( model, Lamdera.sendToFrontend sessionId TF_MatchNotFound )
+
+        TB_GameMessage code gameMsg ->
+            case Dict.get code model.matches of
+                Nothing ->
+                    ( model, Cmd.none )
+
+                Just match ->
+                    case getUserDetails sessionId match of
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                        Just users ->
+                            updateGame users code gameMsg match model
+
+
+updateGame : ( Player, SessionId, Maybe ( Player, SessionId ) ) -> String -> GameMsg -> Match -> BackendModel -> ( BackendModel, Cmd BackendMsg )
+updateGame ( activePlayerColor, activePlayerSession, otherPlayerSession ) code gameMsg match model =
+    let
+        setUpdatedMatch : Game -> BackendModel
+        setUpdatedMatch game =
+            { model
+                | matches =
+                    Dict.insert code
+                        { match | game = game }
+                        model.matches
+            }
+    in
+    case gameMsg of
+        CreateNewGame size ->
+            let
+                game : Game
+                game =
+                    PlayingGame (initGame size)
+            in
+            ( setUpdatedMatch game
+            , case otherPlayerSession of
+                Nothing ->
+                    Cmd.none
+
+                Just ( otherPlayer, sessionId ) ->
+                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer game)
+            )
+
+        SetGameSize size ->
+            case match.game of
+                PlayingGame _ ->
+                    ( model, Cmd.none )
+
+                NewGame newGame ->
+                    ( setUpdatedMatch (NewGame { newGame | size = size })
+                    , case otherPlayerSession of
+                        Nothing ->
+                            Cmd.none
+
+                        Just ( _, sessionId ) ->
+                            Lamdera.sendToFrontend sessionId (TF_SetGameSize size)
+                    )
+
+                CompletedGame completedGame ->
+                    ( setUpdatedMatch (CompletedGame { completedGame | size = size })
+                    , case otherPlayerSession of
+                        Nothing ->
+                            Cmd.none
+
+                        Just ( _, sessionId ) ->
+                            Lamdera.sendToFrontend sessionId (TF_SetGameSize size)
+                    )
+
+        StackSizeSelected sizeStr ->
+            case String.toInt sizeStr of
+                Nothing ->
+                    ( model, Cmd.none )
+
+                Just size ->
+                    case match.game of
+                        PlayingGame playingGame ->
+                            ( setUpdatedMatch (PlayingGame { playingGame | stackSizeSelected = size })
+                            , Cmd.none
+                            )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+        SetSelectedPiece piece ->
+            case match.game of
+                PlayingGame playingGame ->
+                    if playingGame.turn == activePlayerColor then
+                        case playingGame.turn of
+                            White ->
+                                ( setUpdatedMatch (PlayingGame { playingGame | selectedPieceWhite = piece })
+                                , Cmd.none
+                                )
+
+                            Black ->
+                                ( setUpdatedMatch (PlayingGame { playingGame | selectedPieceBlack = piece })
+                                , Cmd.none
+                                )
+
+                    else
+                        ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        SpaceSelected index ->
+            case match.game of
+                NewGame _ ->
+                    ( model, Cmd.none )
+
+                CompletedGame _ ->
+                    ( model, Cmd.none )
+
+                PlayingGame playingGame ->
+                    let
+                        ( nextGameState, cmd ) =
+                            case playingGame.pieceToMove of
+                                Just idx ->
+                                    if index == idx then
+                                        ( { playingGame | pieceToMove = Nothing }
+                                        , Cmd.none
+                                        )
+
+                                    else if List.member index (adjacentIndices playingGame.size idx) then
+                                        case boardGet idx playingGame.board of
+                                            [] ->
+                                                ( playingGame, Cmd.none )
+
+                                            (( sourceTopPiece, player ) :: _) as sourceStack ->
+                                                if playingGame.turn == activePlayerColor && player == playingGame.turn then
+                                                    case boardGet index playingGame.board of
+                                                        [] ->
+                                                            let
+                                                                nextGame =
+                                                                    { playingGame
+                                                                        | board =
+                                                                            playingGame.board
+                                                                                |> boardInsert index sourceStack
+                                                                                |> boardRemove idx
+                                                                        , pieceToMove = Nothing
+                                                                        , turn =
+                                                                            case playingGame.turn of
+                                                                                White ->
+                                                                                    Black
+
+                                                                                Black ->
+                                                                                    White
+                                                                    }
+                                                            in
+                                                            ( nextGame
+                                                            , case otherPlayerSession of
+                                                                Nothing ->
+                                                                    Cmd.none
+
+                                                                Just ( otherPlayer, sessionId ) ->
+                                                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                                            )
+
+                                                        (( Stone, _ ) :: _) as destinationStack ->
+                                                            let
+                                                                nextGame =
+                                                                    { playingGame
+                                                                        | board =
+                                                                            playingGame.board
+                                                                                |> boardInsert index (sourceStack ++ destinationStack)
+                                                                                |> boardRemove idx
+                                                                        , pieceToMove = Nothing
+                                                                        , turn =
+                                                                            case playingGame.turn of
+                                                                                White ->
+                                                                                    Black
+
+                                                                                Black ->
+                                                                                    White
+                                                                    }
+                                                            in
+                                                            ( nextGame
+                                                            , case otherPlayerSession of
+                                                                Nothing ->
+                                                                    Cmd.none
+
+                                                                Just ( otherPlayer, sessionId ) ->
+                                                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                                            )
+
+                                                        ( Wall, plr ) :: destinationStack ->
+                                                            if sourceTopPiece == Capstone then
+                                                                let
+                                                                    nextGame =
+                                                                        { playingGame
+                                                                            | board =
+                                                                                playingGame.board
+                                                                                    |> boardInsert index (sourceStack ++ ( Stone, plr ) :: destinationStack)
+                                                                                    |> boardRemove idx
+                                                                            , pieceToMove = Nothing
+                                                                            , turn =
+                                                                                case playingGame.turn of
+                                                                                    White ->
+                                                                                        Black
+
+                                                                                    Black ->
+                                                                                        White
+                                                                        }
+                                                                in
+                                                                ( nextGame
+                                                                , case otherPlayerSession of
+                                                                    Nothing ->
+                                                                        Cmd.none
+
+                                                                    Just ( otherPlayer, sessionId ) ->
+                                                                        Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                                                                )
+
+                                                            else
+                                                                ( { playingGame | pieceToMove = Just index }
+                                                                , Cmd.none
+                                                                )
+
+                                                        _ ->
+                                                            ( { playingGame | pieceToMove = Just index }
+                                                            , Cmd.none
+                                                            )
+
+                                                else
+                                                    case boardGet index playingGame.board of
+                                                        [] ->
+                                                            ( { playingGame | pieceToMove = Nothing }
+                                                            , Cmd.none
+                                                            )
+
+                                                        _ ->
+                                                            ( { playingGame | pieceToMove = Just index }
+                                                            , Cmd.none
+                                                            )
+
+                                    else
+                                        case boardGet index playingGame.board of
+                                            [] ->
+                                                ( { playingGame | pieceToMove = Nothing }, Cmd.none )
+
+                                            _ ->
+                                                ( { playingGame | pieceToMove = Just index }, Cmd.none )
+
+                                Nothing ->
+                                    updateNoPieceSelected otherPlayerSession code activePlayerColor index playingGame
+                    in
+                    case checkWinCondition nextGameState.size nextGameState.board of
+                        Nothing ->
+                            ( setUpdatedMatch (PlayingGame nextGameState), cmd )
+
+                        Just winner ->
+                            let
+                                gameWon : Game
+                                gameWon =
+                                    CompletedGame { winner = winner, state = nextGameState, size = nextGameState.size }
+                            in
+                            ( setUpdatedMatch gameWon
+                            , case otherPlayerSession of
+                                Nothing ->
+                                    Cmd.none
+
+                                Just ( otherPlayer, sessionId ) ->
+                                    Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer gameWon)
+                            )
+
+
+updateNoPieceSelected : Maybe ( Player, SessionId ) -> String -> Player -> Int -> GameState -> ( GameState, Cmd BackendMsg )
+updateNoPieceSelected otherPlayerSession code activePlayerColor index game =
+    case boardGet index game.board of
+        [] ->
+            if game.turn == activePlayerColor then
+                let
+                    piece : Piece
+                    piece =
+                        case game.turn of
+                            White ->
+                                game.selectedPieceWhite
+
+                            Black ->
+                                game.selectedPieceBlack
+
+                    ( remStones, remCapstones, ( decStone, decCapstone ) ) =
+                        case game.turn of
+                            White ->
+                                ( game.stoneCountWhite
+                                , game.capstoneCountWhite
+                                , ( \m -> { m | stoneCountWhite = m.stoneCountWhite - 1 }
+                                  , \m -> { m | capstoneCountWhite = m.capstoneCountWhite - 1 }
+                                  )
+                                )
+
+                            Black ->
+                                ( game.stoneCountBlack
+                                , game.capstoneCountBlack
+                                , ( \m -> { m | stoneCountBlack = m.stoneCountBlack - 1 }
+                                  , \m -> { m | capstoneCountBlack = m.capstoneCountBlack - 1 }
+                                  )
+                                )
+                in
+                case ( piece, remStones, remCapstones ) of
+                    ( Capstone, _, 0 ) ->
+                        ( game, Cmd.none )
+
+                    ( Capstone, _, _ ) ->
+                        let
+                            nextGame =
+                                { game
+                                    | board =
+                                        boardInsert index
+                                            [ ( piece, game.turn ) ]
+                                            game.board
+                                    , turn =
+                                        case game.turn of
+                                            White ->
+                                                Black
+
+                                            Black ->
+                                                White
+                                    , pieceToMove = Nothing
+                                }
+                                    |> decCapstone
+                        in
+                        ( nextGame
+                        , case otherPlayerSession of
+                            Nothing ->
+                                Cmd.none
+
+                            Just ( otherPlayer, sessionId ) ->
+                                Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                        )
+
+                    ( _, 0, _ ) ->
+                        ( game, Cmd.none )
+
+                    _ ->
+                        let
+                            nextGame =
+                                { game
+                                    | board =
+                                        boardInsert index
+                                            [ ( piece, game.turn ) ]
+                                            game.board
+                                    , turn =
+                                        case game.turn of
+                                            White ->
+                                                Black
+
+                                            Black ->
+                                                White
+                                    , pieceToMove = Nothing
+                                }
+                                    |> decStone
+                        in
+                        ( nextGame
+                        , case otherPlayerSession of
+                            Nothing ->
+                                Cmd.none
+
+                            Just ( otherPlayer, sessionId ) ->
+                                Lamdera.sendToFrontend sessionId (TF_MatchJoined code otherPlayer (PlayingGame nextGame))
+                        )
+
+            else
+                ( game, Cmd.none )
+
+        stack ->
+            ( { game
+                | pieceToMove = Just index
+                , stackSizeSelected = List.length stack
+              }
+            , Cmd.none
+            )
+
+
+makeNewGame : Random.Seed -> ( ( Game, String ), Random.Seed )
+makeNewGame seed =
+    Random.step
+        (Random.List.choices 6 words
+            |> Random.map (Tuple.first >> String.join "-" >> Tuple.pair (NewGame { size = 3 }))
+        )
+        seed
 
 
 findOpenMatch : Dict String Match -> Maybe ( String, Match )
@@ -249,11 +569,72 @@ findOpenMatchHelper matches =
             Nothing
 
         ( code, match ) :: rest ->
-            if match.black == WaitingFor then
+            if match.privacy == Public && match.black == WaitingFor then
                 Just ( code, match )
 
             else
                 findOpenMatchHelper rest
+
+
+getUserDetails : SessionId -> Match -> Maybe ( Player, SessionId, Maybe ( Player, SessionId ) )
+getUserDetails sessionId match =
+    let
+        withWhite whiteDetails =
+            if whiteDetails.device == sessionId then
+                case match.black of
+                    WaitingFor ->
+                        Just ( White, sessionId, Nothing )
+
+                    Disconnected blackDetails ->
+                        Just ( White, sessionId, Just ( Black, blackDetails.device ) )
+
+                    Connected blackDetails ->
+                        Just ( White, sessionId, Just ( Black, blackDetails.device ) )
+
+            else
+                case match.black of
+                    WaitingFor ->
+                        Nothing
+
+                    Disconnected blackDetails ->
+                        if blackDetails.device == sessionId then
+                            Just ( Black, sessionId, Just ( White, whiteDetails.device ) )
+
+                        else
+                            Nothing
+
+                    Connected blackDetails ->
+                        if blackDetails.device == sessionId then
+                            Just ( Black, sessionId, Just ( White, whiteDetails.device ) )
+
+                        else
+                            Nothing
+    in
+    case match.white of
+        WaitingFor ->
+            case match.black of
+                WaitingFor ->
+                    Nothing
+
+                Disconnected blackDetails ->
+                    if blackDetails.device == sessionId then
+                        Just ( Black, sessionId, Nothing )
+
+                    else
+                        Nothing
+
+                Connected blackDetails ->
+                    if blackDetails.device == sessionId then
+                        Just ( Black, sessionId, Nothing )
+
+                    else
+                        Nothing
+
+        Disconnected whiteDetails ->
+            withWhite whiteDetails
+
+        Connected whiteDetails ->
+            withWhite whiteDetails
 
 
 words : List String
