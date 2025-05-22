@@ -652,7 +652,11 @@ viewGame gameRes =
 
 viewGameCommon : List (Html GameMsg) -> List (Html GameMsg)
 viewGameCommon children =
-    Html.h1 [] [ Html.text "Tak-Alike" ] :: children
+    [ Html.div
+        [ Css.gameCommon
+        ]
+        (Html.h1 [] [ Html.text "Tak-Alike" ] :: children)
+    ]
 
 
 viewOpponent : ConnectionStatus -> Html GameMsg
@@ -670,13 +674,10 @@ viewOpponent opponent =
 
 viewNewGame : Int -> Html GameMsg
 viewNewGame size =
-    Html.div []
-        [ Html.button
-            [ Html.Events.onClick (CreateNewGame size) ]
-            [ Html.text "New game" ]
-        , Html.br [] []
-        , Html.br [] []
-        , Html.label
+    Html.div
+        [ Css.newGame
+        ]
+        [ Html.label
             [ Css.sizeSelecttion ]
             (Html.span [] [ Html.text "Board size:" ]
                 :: List.map
@@ -689,98 +690,128 @@ viewNewGame size =
                     )
                     [ 3, 4, 5, 6, 8 ]
             )
+        , Html.button
+            [ Html.Events.onClick (CreateNewGame size) ]
+            [ Html.text "Start game" ]
         ]
 
 
 viewGameState : Player -> Maybe ( Player, List Int ) -> GameState -> List (Html GameMsg)
 viewGameState self winner game =
-    [ Html.h3 []
-        [ Html.text <|
-            if game.turn == self then
-                "Your turn"
+    [ case winner of
+        Nothing ->
+            Html.text ""
 
-            else
-                "Their turn"
-        ]
-    , Html.p
-        []
-        [ Html.h4 []
-            [ Html.text
-                ((case self of
-                    White ->
-                        "White"
+        Just ( winningPlayer, _ ) ->
+            Html.h2 [ Html.Attributes.style "align-self" "center" ]
+                [ Html.text <|
+                    if winningPlayer == self then
+                        "You win 🎉"
 
-                    Black ->
-                        "Black"
-                 )
-                    ++ " piece to place"
-                )
-            ]
-        , let
-            isSelected : Piece -> Html.Attribute msg
-            isSelected piece =
-                (case game.turn of
-                    White ->
-                        game.selectedPieceWhite
+                    else
+                        "They won!"
+                ]
+    , case winner of
+        Nothing ->
+            Html.span
+                [ Css.turnNotice
+                , Html.Attributes.style "color" <|
+                    if game.turn == self then
+                        "deeppink"
 
-                    Black ->
-                        game.selectedPieceBlack
-                )
-                    |> (==) piece
-                    |> buttonPressed
-          in
-          Html.div
-            [ Html.Attributes.style "display" "flex"
-            , Html.Attributes.style "gap" "0.5rem"
-            ]
-            [ Html.button
-                [ Html.Events.onClick (SetSelectedPiece Stone)
-                , isSelected Stone
+                    else
+                        "inherit"
                 ]
-                [ Html.text "Stone" ]
-            , Html.button
-                [ Html.Events.onClick (SetSelectedPiece Wall)
-                , isSelected Wall
-                ]
-                [ Html.text "Wall" ]
-            , Html.button
-                [ Html.Events.onClick (SetSelectedPiece Capstone)
-                , isSelected Capstone
-                ]
-                [ Html.text "Capstone" ]
-            ]
-        , Html.br [] []
-        , Html.div
-            [ Css.stoneCounts
-            ]
-            [ Html.span []
-                [ Html.text
-                    ("Stones left: "
-                        ++ (String.fromInt <|
-                                case game.turn of
-                                    White ->
-                                        game.stoneCountWhite
+                [ Html.text <|
+                    if game.turn == self then
+                        "Your turn"
 
-                                    Black ->
-                                        game.stoneCountBlack
-                           )
-                    )
+                    else
+                        "Their turn"
                 ]
-            , Html.span []
-                [ Html.text
-                    ("Captones left: "
-                        ++ (String.fromInt <|
-                                case game.turn of
-                                    White ->
-                                        game.capstoneCountWhite
 
-                                    Black ->
-                                        game.capstoneCountBlack
-                           )
-                    )
+        Just _ ->
+            Html.text ""
+    , case winner of
+        Nothing ->
+            Html.div
+                [ Css.gameControls
                 ]
-            ]
-        ]
+                [ Html.div
+                    [ Css.gameControlsActions
+                    ]
+                    [ Html.span []
+                        [ Html.text
+                            "Piece to place"
+                        ]
+                    , let
+                        isSelected : Piece -> Html.Attribute msg
+                        isSelected piece =
+                            (case game.turn of
+                                White ->
+                                    game.selectedPieceWhite
+
+                                Black ->
+                                    game.selectedPieceBlack
+                            )
+                                |> (==) piece
+                                |> buttonPressed
+                      in
+                      Html.div
+                        [ Css.gameControlsButtons
+                        ]
+                        [ Html.button
+                            [ Html.Events.onClick (SetSelectedPiece Stone)
+                            , isSelected Stone
+                            ]
+                            [ Html.text "Stone" ]
+                        , Html.button
+                            [ Html.Events.onClick (SetSelectedPiece Wall)
+                            , isSelected Wall
+                            ]
+                            [ Html.text "Wall" ]
+                        , Html.button
+                            [ Html.Events.onClick (SetSelectedPiece Capstone)
+                            , isSelected Capstone
+                            ]
+                            [ Html.text "Capstone" ]
+                        ]
+                    ]
+                , Html.div
+                    [ Css.stoneCounts
+                    , Html.Attributes.style "align-self" "flex-end"
+                    ]
+                    [ Html.span []
+                        [ Html.text
+                            ("Stones/Walls left: "
+                                ++ (String.fromInt <|
+                                        case game.turn of
+                                            White ->
+                                                game.stoneCountWhite
+
+                                            Black ->
+                                                game.stoneCountBlack
+                                   )
+                            )
+                        ]
+                    , Html.span []
+                        [ Html.text
+                            ("Captones left: "
+                                ++ (String.fromInt <|
+                                        case game.turn of
+                                            White ->
+                                                game.capstoneCountWhite
+
+                                            Black ->
+                                                game.capstoneCountBlack
+                                   )
+                            )
+                        ]
+                    ]
+                ]
+
+        Just _ ->
+            Html.text ""
     , Html.div
         [ Css.gameplayArea ]
         [ game.board
