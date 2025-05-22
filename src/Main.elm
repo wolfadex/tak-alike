@@ -182,7 +182,7 @@ update msg model =
                                         [] ->
                                             ( model, Cmd.none )
 
-                                        (( _, player ) :: _) as sourceStack ->
+                                        (( sourceTopPiece, player ) :: _) as sourceStack ->
                                             if player == model.turn then
                                                 case boardGet index model.board of
                                                     [] ->
@@ -220,6 +220,28 @@ update msg model =
                                                           }
                                                         , Cmd.none
                                                         )
+
+                                                    ( Wall, plr ) :: destinationStack ->
+                                                        if sourceTopPiece == Capstone then
+                                                            ( { model
+                                                                | board =
+                                                                    model.board
+                                                                        |> boardInsert index (sourceStack ++ ( Stone, plr ) :: destinationStack)
+                                                                        |> boardRemove idx
+                                                                , pieceToMove = Nothing
+                                                                , turn =
+                                                                    case model.turn of
+                                                                        White ->
+                                                                            Black
+
+                                                                        Black ->
+                                                                            White
+                                                              }
+                                                            , Cmd.none
+                                                            )
+
+                                                        else
+                                                            ( { model | pieceToMove = Just index }, Cmd.none )
 
                                                     _ ->
                                                         ( { model | pieceToMove = Just index }, Cmd.none )
