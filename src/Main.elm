@@ -182,24 +182,47 @@ update msg model =
                                         [] ->
                                             ( model, Cmd.none )
 
-                                        (( _, player ) :: _) as stack ->
+                                        (( _, player ) :: _) as sourceStack ->
                                             if player == model.turn then
-                                                ( { model
-                                                    | board =
-                                                        model.board
-                                                            |> boardInsert index (stack ++ boardGet index model.board)
-                                                            |> boardRemove idx
-                                                    , pieceToMove = Nothing
-                                                    , turn =
-                                                        case model.turn of
-                                                            White ->
-                                                                Black
+                                                case boardGet index model.board of
+                                                    [] ->
+                                                        ( { model
+                                                            | board =
+                                                                model.board
+                                                                    |> boardInsert index sourceStack
+                                                                    |> boardRemove idx
+                                                            , pieceToMove = Nothing
+                                                            , turn =
+                                                                case model.turn of
+                                                                    White ->
+                                                                        Black
 
-                                                            Black ->
-                                                                White
-                                                  }
-                                                , Cmd.none
-                                                )
+                                                                    Black ->
+                                                                        White
+                                                          }
+                                                        , Cmd.none
+                                                        )
+
+                                                    (( Stone, _ ) :: _) as destinationStack ->
+                                                        ( { model
+                                                            | board =
+                                                                model.board
+                                                                    |> boardInsert index (sourceStack ++ destinationStack)
+                                                                    |> boardRemove idx
+                                                            , pieceToMove = Nothing
+                                                            , turn =
+                                                                case model.turn of
+                                                                    White ->
+                                                                        Black
+
+                                                                    Black ->
+                                                                        White
+                                                          }
+                                                        , Cmd.none
+                                                        )
+
+                                                    _ ->
+                                                        ( { model | pieceToMove = Just index }, Cmd.none )
 
                                             else
                                                 case boardGet index model.board of
