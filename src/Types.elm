@@ -17,6 +17,13 @@ type alias FrontendModel =
 type Page
     = MenuPage Menu
     | GamePage (AsyncResult String GameModel)
+    | Admin_Page Admin_Model
+
+
+type alias Admin_Model =
+    { matches : AsyncResult String (Dict String Admin_Match)
+    , password : String
+    }
 
 
 type alias Menu =
@@ -138,6 +145,7 @@ type Player
 
 type alias BackendModel =
     { matches : Dict String Match
+    , adminClient : Maybe Lamdera.ClientId
     , seed : Random.Seed
     }
 
@@ -155,10 +163,24 @@ type alias Match =
     }
 
 
+type alias Admin_Match =
+    { privacy : Privacy
+    , game : Game
+    , white : Admin_Client
+    , black : Admin_Client
+    }
+
+
 type Client
     = WaitingFor
     | Connected { device : Lamdera.SessionId }
     | Disconnected { device : Lamdera.SessionId }
+
+
+type Admin_Client
+    = Admin_WaitingFor
+    | Admin_Connected
+    | Admin_Disconnected
 
 
 type FrontendMsg
@@ -166,6 +188,7 @@ type FrontendMsg
     | UrlChanged Url
     | MenuMessage MenuMsg
     | GameMessage GameMsg
+    | Admin_Message Admin_Msg
 
 
 type MenuMsg
@@ -183,11 +206,20 @@ type GameMsg
     | StackSizeSelected String
 
 
+type Admin_Msg
+    = Admin_RefreshMatches
+    | Admin_PasswordChanged String
+    | Admin_Authenticate
+    | Admin_DeleteMatch String
+
+
 type ToBackend
     = TB_JoinPublicMatch
     | TB_HostPrivateMatch
     | TB_JoinMatch String
     | TB_GameMessage String GameMsg
+    | TB_Admin_GatherMatches
+    | TB_Admin_DelteMatch String
 
 
 type BackendMsg
@@ -201,6 +233,8 @@ type ToFrontend
     | TF_MatchJoined String Player ConnectionStatus Game
     | TF_SetGameSize Int
     | TF_SetOpponentConnectionStatus ConnectionStatus
+    | TF_Admin_ShowAdminDashboard (Dict String Admin_Match)
+    | TF_Admin_Matches (Dict String Admin_Match)
 
 
 type ConnectionStatus

@@ -38,6 +38,14 @@ init url key =
         GamePage (Loading code) ->
             Lamdera.sendToBackend (TB_JoinMatch code)
 
+        Admin_Page dashboard ->
+            case dashboard.matches of
+                Loading _ ->
+                    Lamdera.sendToBackend (TB_JoinMatch dashboard.password)
+
+                _ ->
+                    Cmd.none
+
         _ ->
             Cmd.none
     )
@@ -51,6 +59,12 @@ urlToPage url =
 
         [ "game", code ] ->
             GamePage (Loading code)
+
+        [ "admin" ] ->
+            Admin_Page { matches = Failure "Invalid passowrd", password = "" }
+
+        [ "admin", password ] ->
+            Admin_Page { matches = Loading "Gathering matches", password = password }
 
         _ ->
             MenuPage { code = "", loading = Untouched }
@@ -112,6 +126,33 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
+
+        Admin_Message adminMsg ->
+            case model.page of
+                Admin_Page dashboard ->
+                    updateAdmin adminMsg dashboard
+                        |> Tuple.mapFirst (\admin -> { model | page = Admin_Page admin })
+
+                _ ->
+                    ( model, Cmd.none )
+
+
+updateAdmin : Admin_Msg -> Admin_Model -> ( Admin_Model, Cmd FrontendMsg )
+updateAdmin msg model =
+    case msg of
+        Admin_RefreshMatches ->
+            ( { model | matches = Loading "" }, Lamdera.sendToBackend TB_Admin_GatherMatches )
+
+        Admin_PasswordChanged password ->
+            ( { model | password = password }, Cmd.none )
+
+        Admin_Authenticate ->
+            ( { model | matches = Loading "Authenticaing..." }
+            , Lamdera.sendToBackend (TB_JoinMatch model.password)
+            )
+
+        Admin_DeleteMatch code ->
+            ( model, Lamdera.sendToBackend (TB_Admin_DelteMatch code) )
 
 
 updateMenu : MenuMsg -> Menu -> ( Menu, Cmd FrontendMsg )
@@ -307,6 +348,9 @@ updateFromBackend msg model =
                     ( { model | page = MenuPage { menu | loading = Failure "Match not found" } }, Cmd.none )
 
                 GamePage _ ->
+                    ( { model | page = MenuPage { code = "", loading = Failure "Match not found" } }, Cmd.none )
+
+                Admin_Page _ ->
                     ( model, Cmd.none )
 
         TF_MatchJoined code player opponent game ->
@@ -349,6 +393,20 @@ updateFromBackend msg model =
                             ( model, Cmd.none )
 
                 GamePage _ ->
+                    ( model, Cmd.none )
+
+                Admin_Page _ ->
+                    ( model, Cmd.none )
+
+        TF_Admin_ShowAdminDashboard matches ->
+            ( { model | page = Admin_Page { matches = Success matches, password = "" } }, Cmd.none )
+
+        TF_Admin_Matches matches ->
+            case model.page of
+                Admin_Page dashboard ->
+                    ( { model | page = Admin_Page { dashboard | matches = Success matches } }, Cmd.none )
+
+                _ ->
                     ( model, Cmd.none )
 
 
@@ -454,6 +512,10 @@ view model =
             GamePage game ->
                 viewGame game
                     |> List.map (Html.map GameMessage)
+
+            Admin_Page dashboard ->
+                viewAdmin dashboard
+                    |> List.map (Html.map Admin_Message)
     }
 
 
@@ -904,3 +966,130 @@ buttonPressed bool =
     bool
         |> boolToAttribute
         |> Html.Attributes.attribute "aria-pressed"
+
+
+viewAdmin : Admin_Model -> List (Html Admin_Msg)
+viewAdmin model =
+    [ Html.h1 [] [ Html.text "Tak-Alike ADMIN" ]
+    , Html.button [ Html.Events.onClick Admin_RefreshMatches ]
+        [ Html.text "Refresh matches" ]
+    , case model.matches of
+        Untouched ->
+            Html.button
+                []
+                [ Html.text "Load matches" ]
+
+        Loading message ->
+            Html.text message
+
+        Failure error ->
+            Html.form [ Html.Events.onSubmit Admin_Authenticate ]
+                [ Html.text error
+                , Html.input
+                    [ Html.Attributes.value model.password
+                    , Html.Attributes.placeholder "Admin password"
+                    , Html.Events.onInput Admin_PasswordChanged
+                    , Html.Attributes.type_ "password"
+                    ]
+                    []
+                ]
+
+        Success matches ->
+            Html.table
+                []
+                [ Html.thead
+                    []
+                    [ Html.tr []
+                        [ Html.th []
+                            [ Html.text "Privacy" ]
+                        , Html.th
+                            []
+                            [ Html.text "Game state" ]
+                        , Html.th
+                            []
+                            [ Html.text "White status" ]
+                        , Html.th
+                            []
+                            [ Html.text "Black status" ]
+
+                        -- , Html.th
+                        --     []
+                        --     [ Html.text "Black status" ]
+                        ]
+                    ]
+                , matches
+                    |> Dict.toList
+                    |> List.map
+                        (\( code, match ) ->
+                            Html.tr []
+                                [ Html.td []
+                                    [ Html.text <|
+                                        case match.privacy of
+                                            Public ->
+                                                "Public"
+
+                                            Private ->
+                                                "Private"
+                                    ]
+                                , Html.td []
+                                    [ Html.text <|
+                                        case match.game of
+                                            NewGame _ ->
+                                                "New game"
+
+                                            PlayingGame gameState ->
+                                                "Playing - "
+                                                    ++ (case gameState.turn of
+                                                            White ->
+                                                                "White's"
+
+                                                            Black ->
+                                                                "Black's"
+                                                       )
+                                                    ++ " turn"
+
+                                            CompletedGame { winner } ->
+                                                "Completed - "
+                                                    ++ (case winner of
+                                                            ( White, _ ) ->
+                                                                "White"
+
+                                                            ( Black, _ ) ->
+                                                                "Black"
+                                                       )
+                                                    ++ " won"
+                                    ]
+                                , Html.td []
+                                    [ Html.text <|
+                                        case match.white of
+                                            Admin_WaitingFor ->
+                                                "Waiting for"
+
+                                            Admin_Connected ->
+                                                "Connected"
+
+                                            Admin_Disconnected ->
+                                                "Disconnected"
+                                    ]
+                                , Html.td []
+                                    [ Html.text <|
+                                        case match.black of
+                                            Admin_WaitingFor ->
+                                                "Waiting for"
+
+                                            Admin_Connected ->
+                                                "Connected"
+
+                                            Admin_Disconnected ->
+                                                "Disconnected"
+                                    ]
+                                , Html.td []
+                                    [ Html.button
+                                        [ Html.Events.onClick (Admin_DeleteMatch code) ]
+                                        [ Html.text "Delete match" ]
+                                    ]
+                                ]
+                        )
+                    |> Html.tbody []
+                ]
+    ]
