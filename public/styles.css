@@ -71,10 +71,20 @@ button[aria-pressed="true"] {
     flex-direction: column;
 }
 
+.selectedStackDisplay {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px;
+}
+
 .selectedStackPieces {
     display: flex;
     flex-direction: column;
     gap: 2px;
+}
+
+.stackSelectionInput {
+    writing-mode: vertical-lr;
 }
 
 .stackPiece {

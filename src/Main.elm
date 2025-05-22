@@ -30,6 +30,7 @@ type alias Model =
     , capstoneCountWhite : Int
     , capstoneCountBlack : Int
     , winner : Maybe ( Player, List Int )
+    , stackSizeSelected : Int
 
     --
     , newGameSize : Int
@@ -117,6 +118,7 @@ initGame size =
     , capstoneCountWhite = capstoneCount
     , capstoneCountBlack = capstoneCount
     , winner = Nothing
+    , stackSizeSelected = 1
     , newGameSize = size
     }
 
@@ -131,6 +133,7 @@ type Msg
     | SetGameSize Int
     | SpaceSelected Int
     | SetSelectedPiece Piece
+    | StackSizeSelected String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -141,6 +144,14 @@ update msg model =
 
         SetGameSize size ->
             ( { model | newGameSize = size }, Cmd.none )
+
+        StackSizeSelected sizeStr ->
+            case String.toInt sizeStr of
+                Nothing ->
+                    ( model, Cmd.none )
+
+                Just size ->
+                    ( { model | stackSizeSelected = size }, Cmd.none )
 
         SetSelectedPiece piece ->
             case model.turn of
@@ -163,31 +174,48 @@ update msg model =
                     <|
                         case model.pieceToMove of
                             Just idx ->
-                                if List.member index (adjacentIndices model.size idx) then
+                                if index == idx then
+                                    ( { model | pieceToMove = Nothing }, Cmd.none )
+
+                                else if List.member index (adjacentIndices model.size idx) then
                                     case boardGet idx model.board of
                                         [] ->
                                             ( model, Cmd.none )
 
-                                        stack ->
-                                            ( { model
-                                                | board =
-                                                    model.board
-                                                        |> boardInsert index (stack ++ boardGet index model.board)
-                                                        |> boardRemove idx
-                                                , pieceToMove = Nothing
-                                                , turn =
-                                                    case model.turn of
-                                                        White ->
-                                                            Black
+                                        (( _, player ) :: _) as stack ->
+                                            if player == model.turn then
+                                                ( { model
+                                                    | board =
+                                                        model.board
+                                                            |> boardInsert index (stack ++ boardGet index model.board)
+                                                            |> boardRemove idx
+                                                    , pieceToMove = Nothing
+                                                    , turn =
+                                                        case model.turn of
+                                                            White ->
+                                                                Black
 
-                                                        Black ->
-                                                            White
-                                              }
-                                            , Cmd.none
-                                            )
+                                                            Black ->
+                                                                White
+                                                  }
+                                                , Cmd.none
+                                                )
+
+                                            else
+                                                case boardGet index model.board of
+                                                    [] ->
+                                                        ( { model | pieceToMove = Nothing }, Cmd.none )
+
+                                                    _ ->
+                                                        ( { model | pieceToMove = Just index }, Cmd.none )
 
                                 else
-                                    updateNoPieceSelected index model
+                                    case boardGet index model.board of
+                                        [] ->
+                                            ( { model | pieceToMove = Nothing }, Cmd.none )
+
+                                        _ ->
+                                            ( { model | pieceToMove = Just index }, Cmd.none )
 
                             Nothing ->
                                 updateNoPieceSelected index model
@@ -273,6 +301,7 @@ updateNoPieceSelected index model =
         _ ->
             ( { model
                 | pieceToMove = Just index
+                , stackSizeSelected = List.length (boardGet index model.board)
               }
             , Cmd.none
             )
@@ -527,43 +556,80 @@ view model =
                     Html.text ""
 
                 Just index ->
-                    Html.div
-                        [ Css.selectedStack ]
-                        [ Html.h3 [] [ Html.text "Selected stack" ]
-                        , boardGet index model.board
-                            |> List.map
-                                (\( piece, player ) ->
-                                    Html.div
-                                        [ Html.Attributes.style "background-color" <|
-                                            case player of
-                                                White ->
-                                                    "rgb(245, 245, 245)"
+                    let
+                        selectedStack : List ( Piece, Player )
+                        selectedStack =
+                            boardGet index model.board
 
-                                                Black ->
-                                                    "rgb(10, 10, 10)"
-                                        , Html.Attributes.style "color" <|
-                                            case player of
-                                                White ->
-                                                    "rgb(10, 10, 10)"
+                        stackSize : Int
+                        stackSize =
+                            List.length selectedStack
+                    in
+                    if stackSize == 0 then
+                        Html.text ""
 
-                                                Black ->
-                                                    "rgb(245, 245, 245)"
-                                        , Css.stackPiece
+                    else
+                        Html.div
+                            [ Css.selectedStack ]
+                            [ Html.h3 [] [ Html.text "Selected stack" ]
+                            , Html.div
+                                [ Css.selectedStackDisplay
+                                , Html.Attributes.style "grid-template-rows" ("repeat(" ++ String.fromInt stackSize ++ ", 1fr)")
+                                ]
+                                ((if stackSize == 1 then
+                                    Html.text ""
+
+                                  else
+                                    Html.input
+                                        [ Css.stackSelectionInput
+                                        , Html.Attributes.style "grid-column" "2"
+                                        , Html.Attributes.style "grid-row" ("1 / " ++ String.fromInt (min model.size stackSize + 1))
+                                        , Html.Attributes.type_ "range"
+                                        , Html.Attributes.step "1"
+                                        , Html.Attributes.min "1"
+                                        , Html.Attributes.max (String.fromInt stackSize)
+                                        , Html.Attributes.value (String.fromInt model.stackSizeSelected)
+                                        , Html.Events.onInput StackSizeSelected
                                         ]
-                                        [ Html.text <|
-                                            case piece of
-                                                Stone ->
-                                                    "STONE"
+                                        []
+                                 )
+                                    :: (selectedStack
+                                            |> List.indexedMap
+                                                (\idx ( piece, player ) ->
+                                                    Html.div
+                                                        [ Html.Attributes.style "background-color" <|
+                                                            case player of
+                                                                White ->
+                                                                    "rgb(245, 245, 245)"
 
-                                                Wall ->
-                                                    "WALL"
+                                                                Black ->
+                                                                    "rgb(10, 10, 10)"
+                                                        , Html.Attributes.style "color" <|
+                                                            case player of
+                                                                White ->
+                                                                    "rgb(10, 10, 10)"
 
-                                                Capstone ->
-                                                    "CAPSTONE"
-                                        ]
+                                                                Black ->
+                                                                    "rgb(245, 245, 245)"
+                                                        , Css.stackPiece
+                                                        , Html.Attributes.style "grid-column" "1"
+                                                        , Html.Attributes.style "grid-row" (String.fromInt (idx + 1))
+                                                        ]
+                                                        [ Html.text <|
+                                                            case piece of
+                                                                Stone ->
+                                                                    "STONE"
+
+                                                                Wall ->
+                                                                    "WALL"
+
+                                                                Capstone ->
+                                                                    "CAPSTONE"
+                                                        ]
+                                                )
+                                       )
                                 )
-                            |> Html.div [ Css.selectedStackPieces ]
-                        ]
+                            ]
             ]
         ]
     }
