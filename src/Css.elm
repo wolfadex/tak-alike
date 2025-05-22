@@ -1,7 +1,22 @@
-module Css exposing (gameplayArea, board, boardSpace, boardSpaceBackground, boardSpaceGrid, sizeSelecttion, stoneCounts, selectedStack, selectedStackDisplay, selectedStackPieces, stackSelectionInput, stackPiece)
+module Css exposing (menu, menuJoinOption, menuOptions, gameplayArea, board, boardSpace, boardSpaceBackground, boardSpaceGrid, sizeSelecttion, stoneCounts, selectedStack, selectedStackDisplay, selectedStackPieces, stackSelectionInput, stackPiece)
 
 import Html
 import Html.Attributes
+
+
+menu : Html.Attribute msg
+menu =
+    Html.Attributes.class "menu"
+
+
+menuJoinOption : Html.Attribute msg
+menuJoinOption =
+    Html.Attributes.class "menuJoinOption"
+
+
+menuOptions : Html.Attribute msg
+menuOptions =
+    Html.Attributes.class "menuOptions"
 
 
 gameplayArea : Html.Attribute msg
