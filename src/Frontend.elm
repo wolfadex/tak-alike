@@ -613,6 +613,31 @@ viewMenu menu =
 
                 Failure error ->
                     Html.text error
+            , Html.p
+                []
+                [ Html.span [] [ Html.b [] [ Html.text "Goal" ] ]
+                , Html.br [] []
+                , Html.text "Create a path of your stones and/or capstones between 2 opposite edges."
+                , Html.br [] []
+                , Html.br [] []
+                , Html.span [] [ Html.b [] [ Html.text "Gameplay" ] ]
+                , Html.br [] []
+                , Html.text "On your turn, take 1 of 2 actions"
+                , Html.br [] []
+                , Html.text "• Places a stone, wall, or capstone on any empty space"
+                , Html.br [] []
+                , Html.text "• Move a stack of pieces to an adjacent space"
+                , Html.p
+                    [ Html.Attributes.style "padding-left" "1rem"
+                    , Html.Attributes.style "margin" "0"
+                    ]
+                    [ Html.text "• You can't move on top of a wall, except with a capstone. This turns the wall into a stone" ]
+                , Html.p
+                    [ Html.Attributes.style "padding-left" "1rem"
+                    , Html.Attributes.style "margin" "0"
+                    ]
+                    [ Html.text "• You can't move more pieces in a stack than the size of the board. I.e. if the board is of size 3, and you have a stack of 5 pieces, you may only move 1-3 of the top pieces." ]
+                ]
             ]
         ]
     ]
