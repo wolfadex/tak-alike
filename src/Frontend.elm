@@ -306,13 +306,22 @@ updateGame msg gameModel =
 
                                         (( sourceTopPiece, player ) :: _) as sourceStack ->
                                             if playingGame.turn == gameModel.self && player == playingGame.turn then
+                                                let
+                                                    sourceStackToMove : List ( Piece, Player )
+                                                    sourceStackToMove =
+                                                        List.take playingGame.stackSizeSelected sourceStack
+
+                                                    sourceStackToLeave : List ( Piece, Player )
+                                                    sourceStackToLeave =
+                                                        List.drop playingGame.stackSizeSelected sourceStack
+                                                in
                                                 case boardGet index playingGame.board of
                                                     [] ->
                                                         ( { playingGame
                                                             | board =
                                                                 playingGame.board
-                                                                    |> boardInsert index sourceStack
-                                                                    |> boardRemove idx
+                                                                    |> boardInsert index sourceStackToMove
+                                                                    |> boardInsert idx sourceStackToLeave
                                                             , pieceToMove = Nothing
                                                             , turn =
                                                                 case playingGame.turn of
@@ -329,8 +338,8 @@ updateGame msg gameModel =
                                                         ( { playingGame
                                                             | board =
                                                                 playingGame.board
-                                                                    |> boardInsert index (sourceStack ++ destinationStack)
-                                                                    |> boardRemove idx
+                                                                    |> boardInsert index (sourceStackToMove ++ destinationStack)
+                                                                    |> boardInsert idx sourceStackToLeave
                                                             , pieceToMove = Nothing
                                                             , turn =
                                                                 case playingGame.turn of
@@ -348,8 +357,8 @@ updateGame msg gameModel =
                                                             ( { playingGame
                                                                 | board =
                                                                     playingGame.board
-                                                                        |> boardInsert index (sourceStack ++ ( Stone, plr ) :: destinationStack)
-                                                                        |> boardRemove idx
+                                                                        |> boardInsert index (sourceStackToMove ++ ( Stone, plr ) :: destinationStack)
+                                                                        |> boardInsert idx sourceStackToLeave
                                                                 , pieceToMove = Nothing
                                                                 , turn =
                                                                     case playingGame.turn of
